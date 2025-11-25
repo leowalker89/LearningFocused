@@ -11,3 +11,8 @@ wheels/
 
 # Environment variables
 .env
+
+planning/
+podcast_downloads/
+transcripts/
+.mypy_cache/
