@@ -1,4 +1,4 @@
-import assemblyai as aai
+import assemblyai as aai  # type: ignore
 import os
 import json
 from datetime import datetime
