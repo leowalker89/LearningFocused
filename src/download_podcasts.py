@@ -1,6 +1,7 @@
 import os
 import time
 import re
+import json
 import feedparser
 import requests
 from requests.adapters import HTTPAdapter
@@ -31,19 +32,65 @@ def sanitize_filename(filename):
     clean_name = "".join(ch for ch in clean_name if ord(ch) >= 32)
     return clean_name.strip()
 
-def download_podcasts(rss_feed_url: str, output_dir: str, limit: int | None = None):
+def extract_episode_metadata(entry):
+    """
+    Extracts relevant metadata from a feed entry.
+    """
+    metadata = {
+        "title": entry.get("title"),
+        "summary": entry.get("summary"),
+        "published": entry.get("published"),
+        "links": entry.get("links", []),
+        "id": entry.get("id"),
+    }
+
+    # Handle image (can be a dict or string depending on feed)
+    image = entry.get("image")
+    if isinstance(image, dict):
+        metadata["image"] = image.get("href")
+    else:
+        metadata["image"] = image
+
+    # Handle complex list fields
+    if "tags" in entry:
+        metadata["tags"] = [t.get("term") for t in entry.tags]
+    
+    if "content" in entry:
+        metadata["content"] = [c.get("value") for c in entry.content]
+
+    # Handle optional iTunes fields dynamically
+    optional_fields = [
+        "itunes_episode", 
+        "itunes_season", 
+        "itunes_duration", 
+        "itunes_explicit"
+    ]
+    
+    for field in optional_fields:
+        if field in entry:
+            metadata[field] = entry[field]
+            
+    return metadata
+
+def download_podcasts(rss_feed_url: str, output_dir: str, metadata_dir: str = "metadata_output", limit: int | None = None):
     """
     Download podcasts from an RSS feed.
     
     Args:
         rss_feed_url: The URL of the RSS feed.
         output_dir: The directory to save downloaded episodes.
+        metadata_dir: The directory to save episode metadata.
         limit: The maximum number of episodes to download. If None, downloads all.
     """
     # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Created directory: {output_dir}")
+
+    # Create metadata directory if it doesn't exist
+    if not os.path.exists(metadata_dir):
+        os.makedirs(metadata_dir)
+        print(f"Created directory: {metadata_dir}")
 
     print(f"Parsing RSS feed: {rss_feed_url}")
     feed = feedparser.parse(rss_feed_url)
@@ -69,6 +116,17 @@ def download_podcasts(rss_feed_url: str, output_dir: str, limit: int | None = No
             clean_title = sanitize_filename(title)
             filename = f"{clean_title}.mp3"
             filepath = os.path.join(output_dir, filename)
+
+            # Extract metadata using helper function
+            metadata = extract_episode_metadata(entry)
+
+            # Save metadata to JSON in the root metadata directory
+            metadata_filename = f"{clean_title}.json"
+            metadata_filepath = os.path.join(metadata_dir, metadata_filename)
+            
+            with open(metadata_filepath, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+            print(f"Saved metadata: {metadata_filename}")
 
             # Idempotency check
             if os.path.exists(filepath):
@@ -118,4 +176,4 @@ if __name__ == "__main__":
     OUTPUT_DIR = "podcast_downloads"
     
     # Set limit to 10 for testing, or None for all
-    download_podcasts(RSS_FEED_URL, OUTPUT_DIR, limit=15)
+    download_podcasts(RSS_FEED_URL, OUTPUT_DIR, metadata_dir="metadata_output", limit=15)
