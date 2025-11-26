@@ -18,3 +18,5 @@ transcripts/
 .mypy_cache/
 
 metadata_output/
+
+*.ipynb
