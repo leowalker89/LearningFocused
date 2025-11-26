@@ -1,0 +1,138 @@
+import json
+import os
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional
+from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.prompts import ChatPromptTemplate
+
+# Load environment variables
+load_dotenv()
+
+def load_transcript(file_path: str) -> List[Dict]:
+    """Loads the transcript from a JSON file."""
+    with open(file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get("transcript", [])
+
+def format_transcript_for_prompt(transcript_data: List[Dict]) -> str:
+    """Formats the transcript data into a string for the LLM."""
+    formatted_lines = []
+    for entry in transcript_data:
+        speaker = entry.get("speaker") or "Unknown"
+        text = entry.get("text", "")
+        formatted_lines.append(f"Speaker {speaker}: {text}")
+    return "\n".join(formatted_lines)
+
+def identify_speakers(transcript_path: str) -> Dict[str, str]:
+    """
+    Identifies speakers in a podcast transcript using Gemini.
+    
+    Args:
+        transcript_path: Path to the transcript JSON file.
+        
+    Returns:
+        A dictionary mapping speaker labels (e.g., 'A') to names.
+    """
+    if not os.getenv("GOOGLE_API_KEY"):
+        raise ValueError("GOOGLE_API_KEY not found in environment variables.")
+
+    print(f"Processing: {transcript_path}")
+    
+    transcript_data = load_transcript(transcript_path)
+    if not transcript_data:
+        print("No transcript data found.")
+        return {}
+
+    transcript_text = format_transcript_for_prompt(transcript_data)
+    
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        temperature=0.0
+    )
+
+    system_prompt = """
+    You are an intelligent assistant tasked with identifying speakers in a podcast transcript.
+    
+    Context:
+    - The podcast is "The Future of Education" hosted by Mackenzie Price.
+    - Mackenzie Price is the main host.
+    - There is a Narrator who typically provides the intro and outro segments.
+    - There may be one or more guests (co-hosts, interviewees, etc.).
+    - There are up to 6 speakers.
+    
+    Your Task:
+    1. Analyze the transcript text provided.
+    2. Identify who each Speaker label (e.g., "A", "B", "C") corresponds to based on the content.
+       - Clues: Self-introductions ("I'm [Name]"), roles (Host, Narrator), and context of the conversation.
+    3. Output a JSON object mapping the speaker label to the identified name.
+    
+    Example Output:
+    {{
+        "A": "Mackenzie Price",
+        "B": "Narrator",
+        "C": "Guest Name"
+    }}
+    
+    Return ONLY valid JSON.
+    """
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("user", "Here is the transcript:\n\n{transcript_text}")
+    ])
+
+    chain = prompt | llm | JsonOutputParser()
+
+    try:
+        result = chain.invoke({"transcript_text": transcript_text})
+        return result
+    except Exception as e:
+        print(f"Error calling Gemini: {e}")
+        return {}
+
+def update_transcript_with_speakers(transcript_path: str, speaker_map: Dict[str, str]):
+    """Updates the original JSON file with identified speaker names."""
+    with open(transcript_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    
+    # Add speaker map to metadata
+    if "meta_data" not in data:
+        data["meta_data"] = {}
+    data["meta_data"]["speaker_map"] = speaker_map
+    
+    # Update individual utterances
+    for entry in data.get("transcript", []):
+        label = entry.get("speaker")
+        if label in speaker_map:
+            entry["speaker_name"] = speaker_map[label]
+            
+    # Save back to file
+    with open(transcript_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    
+    print(f"Updated transcript saved to: {transcript_path}")
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python src/identify_speakers.py <path_to_transcript_json>")
+        sys.exit(1)
+        
+    transcript_file = sys.argv[1]
+    if not os.path.exists(transcript_file):
+        print(f"File not found: {transcript_file}")
+        sys.exit(1)
+
+    speakers = identify_speakers(transcript_file)
+    print("\nIdentified Speakers:")
+    print(json.dumps(speakers, indent=2))
+    
+    if speakers:
+        update_transcript_with_speakers(transcript_file, speakers)
+
+if __name__ == "__main__":
+    main()
+

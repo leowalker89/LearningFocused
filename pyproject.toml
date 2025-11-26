@@ -8,6 +8,8 @@ dependencies = [
     "assemblyai>=0.46.0",
     "feedparser>=6.0.12",
     "ipykernel>=7.1.0",
+    "langchain>=1.1.0",
+    "langchain-google-genai>=3.2.0",
     "python-dotenv>=1.2.1",
     "requests>=2.32.5",
 ]
