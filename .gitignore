@@ -15,6 +15,7 @@ wheels/
 planning/
 podcast_downloads/
 transcripts/
+segmented_transcripts/
 .mypy_cache/
 
 metadata_output/
