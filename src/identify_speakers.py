@@ -50,7 +50,7 @@ def identify_speakers(transcript_path: str) -> Dict[str, str]:
     transcript_text = format_transcript_for_prompt(transcript_data)
     
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-flash-latest",
         temperature=0.0
     )
 

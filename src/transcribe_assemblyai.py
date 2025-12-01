@@ -9,10 +9,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Check for API key
-if not os.getenv("ASSEMBLYAI_API_KEY"):
+api_key = os.getenv("ASSEMBLYAI_API_KEY")
+if not api_key:
     print("Error: ASSEMBLYAI_API_KEY not found in environment variables.")
     print("Please create a .env file with your API key.")
-    # You can also set it directly: aai.settings.api_key = "YOUR_API_KEY"
+else:
+    aai.settings.api_key = api_key
 
 def transcribe_audio(file_path: str, output_dir: str = "transcripts") -> str:
     """
