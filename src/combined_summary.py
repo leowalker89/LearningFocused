@@ -21,10 +21,32 @@ class EpisodeGroup(BaseModel):
 class GroupingResponse(BaseModel):
     groups: List[EpisodeGroup] = Field(description="List of episode groups identified")
 
-# ... (CombinedSummary model remains the same)
+class CombinedSummary(BaseModel):
+    overview: str = Field(description="A cohesive narrative summary synthesizing the content from all episodes in the group.")
+    themes: List[str] = Field(description="List of core themes and topics discussed.")
+    key_takeaways: List[str] = Field(description="List of actionable or insightful takeaways for the listener.")
+    value_proposition: str = Field(description="Explanation of why someone should listen to this content (the 'hook').")
+
 
 # --- Helper Functions ---
-# ... (load_transcript and format_transcript_for_llm remain the same)
+
+def load_transcript(file_path: Path) -> Dict[str, Any]:
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+def format_transcript_for_llm(transcript_data: List[Dict[str, Any]]) -> str:
+    """
+    Formats the transcript into a readable string for the LLM.
+    Includes timestamps to help the LLM identify boundaries.
+    """
+    formatted_text = ""
+    for segment in transcript_data:
+        # Use speaker_name if available, otherwise speaker ID
+        speaker = segment.get("speaker_name", segment.get("speaker", "Unknown"))
+        start = segment.get("start_time", 0)
+        text = segment.get("text", "")
+        formatted_text += f"[{start:.2f}s] {speaker}: {text}\n"
+    return formatted_text
 
 def get_all_filenames(transcripts_dir: Path) -> List[str]:
     return [f.name for f in transcripts_dir.glob("*.json")]
