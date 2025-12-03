@@ -21,3 +21,4 @@ segmented_transcripts/
 metadata_output/
 
 *.ipynbchroma_db/
+chroma_db/
