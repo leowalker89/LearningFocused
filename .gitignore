@@ -16,9 +16,13 @@ planning/
 podcast_downloads/
 transcripts/
 segmented_transcripts/
+combined_summaries/
+chroma_db/
+
 .mypy_cache/
 
 metadata_output/
 
-*.ipynbchroma_db/
-chroma_db/
+*.ipynb
+
+
