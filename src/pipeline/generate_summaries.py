@@ -221,7 +221,7 @@ def load_existing_processed_episodes(output_dir: Path) -> set[frozenset]:
     Returns a set of frozensets, where each frozenset contains the filenames 
     of episodes in a single processed group.
     """
-    processed_groups = set()
+    processed_groups: set[frozenset] = set()
     
     if not output_dir.exists():
         return processed_groups
