@@ -44,7 +44,7 @@ ALLOWED_RELATIONSHIPS = [
 def get_graph_transformer() -> LLMGraphTransformer:
     """Initialize the LLMGraphTransformer with Gemini."""
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3-pro-preview", # Defaulting to Gemini 3 Pro Preview as requested
+        model="gemini-flash-latest", 
         temperature=0,
         google_api_key=os.getenv("GOOGLE_API_KEY")
     )
