@@ -18,6 +18,7 @@ transcripts/
 segmented_transcripts/
 combined_summaries/
 chroma_db/
+neo4j/
 
 .mypy_cache/
 

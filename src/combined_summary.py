@@ -75,7 +75,7 @@ def group_episodes(filenames: List[str], metadata_dir: Path) -> List[EpisodeGrou
     
     # Use Gemini Flash for grouping
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash-exp", 
+        model="gemini-2.5-pro", 
         temperature=0,
         google_api_key=os.getenv("GOOGLE_API_KEY")
     )
@@ -156,7 +156,7 @@ def generate_combined_summary(group: EpisodeGroup, transcripts_dir: Path, metada
 
     # Use Gemini Flash for summarization
     llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+        model="gemini-flash-latest",
         temperature=0.1,
         google_api_key=os.getenv("GOOGLE_API_KEY")
     )
