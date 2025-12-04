@@ -58,7 +58,7 @@ uv sync
 The system is designed as a modular pipeline. You can run the core data processing steps with one command:
 
 ```bash
-python src/process_pipeline.py
+python -m src.main
 ```
 
 This script orchestrates:
@@ -74,13 +74,13 @@ Once the raw data is processed, you populate the searchable databases with these
 
 **Step 1: Create Vector Embeddings (ChromaDB)**
 ```bash
-python src/create_embeddings.py
+python src/database/chroma_manager.py
 ```
 *Reads segmented transcripts and summaries, generates embeddings, and stores them in `chroma_db/`.*
 
 **Step 2: Build Knowledge Graph (Neo4j)**
 ```bash
-python src/build_knowledge_graph.py
+python src/database/neo4j_manager.py
 ```
 *Extracts entities and relationships from the text and pushes them to your Neo4j instance.*
 
@@ -88,14 +88,10 @@ python src/build_knowledge_graph.py
 
 | File/Directory | Description |
 | :--- | :--- |
-| `src/process_pipeline.py` | **Main Entry Point**: Orchestrates the data ingestion workflow. |
-| `src/download_podcasts.py` | Handles RSS feed parsing and MP3 downloading. |
-| `src/transcribe_assemblyai.py` | Interfaces with AssemblyAI for high-accuracy transcription. |
-| `src/identify_speakers.py` | Uses LLMs to deduce speaker identities from context. |
-| `src/topic_segmentation.py` | Segments long transcripts into semantic topic blocks. |
-| `src/combined_summary.py` | Groups multi-part episodes and generates "Overview" vectors. |
-| `src/create_embeddings.py` | Vectorizes content for semantic search (ChromaDB). |
-| `src/build_knowledge_graph.py` | Constructs the graph of entities (Neo4j). |
+| `src/main.py` | **Main Entry Point**: Orchestrates the data ingestion workflow. |
+| `src/pipeline/` | Contains processing steps: `download`, `transcribe`, `identify_speakers`, `segment_topics`, `generate_summaries`. |
+| `src/database/` | Database managers: `chroma_manager.py` (Vectors), `neo4j_manager.py` (Graph). |
+| `src/analysis/` | Tools for inspecting data: `inspect_chroma.py`, `inspect_graph.py`, `investigate_entity.py`. |
 | `podcast_downloads/` | Storage for raw audio files. |
 | `transcripts/` | Raw JSON transcripts with speaker diarization. |
 | `segmented_transcripts/` | Transcripts split by topic (ready for RAG). |
