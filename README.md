@@ -58,7 +58,7 @@ uv sync
 The system is designed as a modular pipeline. You can run the core data processing steps with one command:
 
 ```bash
-python -m src.main
+uv run python -m src.main
 ```
 
 This script orchestrates:
@@ -74,15 +74,36 @@ Once the raw data is processed, you populate the searchable databases with these
 
 **Step 1: Create Vector Embeddings (ChromaDB)**
 ```bash
-python src/database/chroma_manager.py
+uv run python -m src.database.chroma_manager
 ```
 *Reads segmented transcripts and summaries, generates embeddings, and stores them in `chroma_db/`.*
 
 **Step 2: Build Knowledge Graph (Neo4j)**
 ```bash
-python src/database/neo4j_manager.py
+uv run python -m src.database.neo4j_manager
 ```
 *Extracts entities and relationships from the text and pushes them to your Neo4j instance.*
+
+### 6. Inspecting the Data
+
+You can explore the processed data using the analysis tools:
+
+**Inspect ChromaDB (Vector Store)**
+```bash
+uv run python -m src.analysis.inspect_chroma
+# Optional: Test semantic search
+uv run python -m src.analysis.inspect_chroma --query "parent burnout"
+```
+
+**Inspect Neo4j (Knowledge Graph)**
+```bash
+uv run python -m src.analysis.inspect_graph
+```
+
+**Investigate Specific Entity in Graph**
+```bash
+uv run python -m src.analysis.investigate_entity "MacKenzie Price"
+```
 
 ## Project Structure & Components
 
