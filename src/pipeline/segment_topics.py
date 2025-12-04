@@ -134,18 +134,14 @@ Guidelines:
         print(f"Error processing {file_path.name}: {e}")
 
 if __name__ == "__main__":
-    # Setup paths
-    base_dir = Path(__file__).parent.parent
-    transcripts_dir = base_dir / "transcripts"
-    output_dir = base_dir / "segmented_transcripts"
-    output_dir.mkdir(exist_ok=True)
+    from src.config import TRANSCRIPTS_DIR, SEGMENTED_DIR
     
     # Process all json files in transcripts directory
     # For testing, maybe just pick one
-    files = list(transcripts_dir.glob("*.json"))
+    files = list(TRANSCRIPTS_DIR.glob("*.json"))
     if not files:
         print("No transcript files found.")
     else:
         for file_path in files:
-            segment_transcript(file_path, output_dir)
+            segment_transcript(file_path, SEGMENTED_DIR)
 

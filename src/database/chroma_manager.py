@@ -11,7 +11,8 @@ from langchain_core.documents import Document
 load_dotenv()
 
 # Constants
-CHROMA_PERSIST_DIRECTORY = "chroma_db"
+from src.config import CHROMA_DIR, COMBINED_DIR, SEGMENTED_DIR
+
 COLLECTION_NAME = "education_knowledge_engine"
 
 def load_json_file(file_path: str) -> Dict[str, Any]:
@@ -122,60 +123,55 @@ def create_transcript_documents(transcript_data: Dict[str, Any]) -> List[Documen
         
     return documents
 
-def main():
-    parser = argparse.ArgumentParser(description="Generate embeddings for Knowledge Engine.")
-    parser.add_argument("--summaries_dir", default="combined_summaries", help="Directory containing combined summary JSONs")
-    parser.add_argument("--transcripts_dir", default="segmented_transcripts", help="Directory containing segmented transcript JSONs")
-    parser.add_argument("--reset", action="store_true", help="Delete existing ChromaDB collection before starting")
-    args = parser.parse_args()
-    
+def update_chroma_db(reset: bool = False):
+    """Main function to update the ChromaDB vector store."""
     # 1. Initialize Vector Store
-    print(f"Initializing ChromaDB in {CHROMA_PERSIST_DIRECTORY}...")
+    print(f"Initializing ChromaDB in {CHROMA_DIR}...")
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     
-    if args.reset and os.path.exists(CHROMA_PERSIST_DIRECTORY):
-        print("Reset flag detected. Cleaning up existing DB (manual deletion required for safe persistent storage usually, but here we just overwrite).")
-        # In a real app, you might use shutil.rmtree(CHROMA_PERSIST_DIRECTORY)
+    if reset and CHROMA_DIR.exists():
+        print("Reset flag detected. Cleaning up existing DB.")
+        # In a real app, you might use shutil.rmtree(CHROMA_DIR)
         
     vector_store = Chroma(
         collection_name=COLLECTION_NAME,
         embedding_function=embeddings,
-        persist_directory=CHROMA_PERSIST_DIRECTORY
+        persist_directory=str(CHROMA_DIR)
     )
     
     all_documents = []
     
     # 2. Process Summaries
     print("Processing Combined Summaries...")
-    if os.path.exists(args.summaries_dir):
-        for filename in os.listdir(args.summaries_dir):
+    if COMBINED_DIR.exists():
+        for filename in os.listdir(COMBINED_DIR):
             if filename.endswith(".json") and not filename.startswith("episode_groupings"):
-                file_path = os.path.join(args.summaries_dir, filename)
+                file_path = os.path.join(COMBINED_DIR, filename)
                 try:
                     data = load_json_file(file_path)
                     docs = create_summary_documents(data)
                     all_documents.extend(docs)
-                    print(f"  Loaded {len(docs)} vectors from {filename}")
+                    # print(f"  Loaded {len(docs)} vectors from {filename}")
                 except Exception as e:
                     print(f"  Error processing {filename}: {e}")
     else:
-        print(f"  Warning: Directory {args.summaries_dir} not found.")
+        print(f"  Warning: Directory {COMBINED_DIR} not found.")
 
     # 3. Process Transcripts
     print("Processing Segmented Transcripts...")
-    if os.path.exists(args.transcripts_dir):
-        for filename in os.listdir(args.transcripts_dir):
+    if SEGMENTED_DIR.exists():
+        for filename in os.listdir(SEGMENTED_DIR):
             if filename.endswith(".json"):
-                file_path = os.path.join(args.transcripts_dir, filename)
+                file_path = os.path.join(SEGMENTED_DIR, filename)
                 try:
                     data = load_json_file(file_path)
                     docs = create_transcript_documents(data)
                     all_documents.extend(docs)
-                    print(f"  Loaded {len(docs)} vectors from {filename}")
+                    # print(f"  Loaded {len(docs)} vectors from {filename}")
                 except Exception as e:
                     print(f"  Error processing {filename}: {e}")
     else:
-        print(f"  Warning: Directory {args.transcripts_dir} not found.")
+        print(f"  Warning: Directory {SEGMENTED_DIR} not found.")
         
     # 4. Batch Add to Chroma
     if all_documents:
@@ -192,4 +188,10 @@ def main():
         print("No documents found to index.")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Generate embeddings for Knowledge Engine.")
+    parser.add_argument("--summaries_dir", default=str(COMBINED_DIR), help="Directory containing combined summary JSONs")
+    parser.add_argument("--transcripts_dir", default=str(SEGMENTED_DIR), help="Directory containing segmented transcript JSONs")
+    parser.add_argument("--reset", action="store_true", help="Delete existing ChromaDB collection before starting")
+    args = parser.parse_args()
+    
+    update_chroma_db(args.reset)

@@ -188,17 +188,20 @@ def process_and_store(documents: List[Document]):
         except Exception as e:
             logger.error(f"Error processing batch starting at index {i}: {e}")
 
-if __name__ == "__main__":
-    base_dir = Path(__file__).parent.parent
-    segmented_dir = base_dir / "segmented_transcripts"
+def update_knowledge_graph():
+    """Main function to update the Neo4j knowledge graph."""
+    from src.config import SEGMENTED_DIR
     
-    if not segmented_dir.exists():
-        logger.error(f"Directory not found: {segmented_dir}")
-        exit(1)
+    if not SEGMENTED_DIR.exists():
+        logger.error(f"Directory not found: {SEGMENTED_DIR}")
+        return
         
-    docs = load_segmented_transcripts(segmented_dir)
+    docs = load_segmented_transcripts(SEGMENTED_DIR)
     
     if docs:
         process_and_store(docs)
     else:
         logger.info("No documents to process.")
+
+if __name__ == "__main__":
+    update_knowledge_graph()

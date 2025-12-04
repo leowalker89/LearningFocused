@@ -172,8 +172,7 @@ def download_podcasts(rss_feed_url: str, output_dir: str, metadata_dir: str = "m
     print("Download process completed.")
 
 if __name__ == "__main__":
-    RSS_FEED_URL = "https://rss.art19.com/future-of-education"
-    OUTPUT_DIR = "podcast_downloads"
+    from src.config import RSS_FEED_URL, DOWNLOADS_DIR, METADATA_DIR
     
     # Set limit to 10 for testing, or None for all
-    download_podcasts(RSS_FEED_URL, OUTPUT_DIR, metadata_dir="metadata_output", limit=15)
+    download_podcasts(RSS_FEED_URL, str(DOWNLOADS_DIR), metadata_dir=str(METADATA_DIR), limit=15)

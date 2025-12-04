@@ -86,15 +86,17 @@ def main():
     """
     # Simple CLI for testing
     import sys
+    from src.config import TRANSCRIPTS_DIR
+    
     if len(sys.argv) > 1:
         audio_file = sys.argv[1]
         try:
-            output_file = transcribe_audio(audio_file)
+            output_file = transcribe_audio(audio_file, output_dir=str(TRANSCRIPTS_DIR))
             print(f"\n✅ Transcription complete. Saved to: {output_file}")
         except Exception as e:
             print(f"Error: {e}")
     else:
-        print("Usage: python src/transcribe_assemblyai.py <path_to_audio_file>")
+        print("Usage: python -m src.pipeline.transcribe <path_to_audio_file>")
 
 if __name__ == "__main__":
     main()

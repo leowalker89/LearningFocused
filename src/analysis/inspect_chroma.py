@@ -9,14 +9,14 @@ from langchain_chroma import Chroma
 load_dotenv()
 
 # Constants (matching create_embeddings.py)
-CHROMA_PERSIST_DIRECTORY = "chroma_db"
+from src.config import CHROMA_DIR
 COLLECTION_NAME = "education_knowledge_engine"
 
 def inspect_chroma(query: Optional[str] = None):
-    print(f"\n=== ChromaDB Inspection ({CHROMA_PERSIST_DIRECTORY}) ===\n")
+    print(f"\n=== ChromaDB Inspection ({CHROMA_DIR}) ===\n")
     
-    if not os.path.exists(CHROMA_PERSIST_DIRECTORY):
-        print(f"Error: Directory {CHROMA_PERSIST_DIRECTORY} not found. Have you run create_embeddings.py?")
+    if not CHROMA_DIR.exists():
+        print(f"Error: Directory {CHROMA_DIR} not found. Have you run src/database/chroma_manager.py?")
         return
 
     try:
@@ -25,7 +25,7 @@ def inspect_chroma(query: Optional[str] = None):
         vector_store = Chroma(
             collection_name=COLLECTION_NAME,
             embedding_function=embeddings,
-            persist_directory=CHROMA_PERSIST_DIRECTORY
+            persist_directory=str(CHROMA_DIR)
         )
         
         # 1. Collection Stats

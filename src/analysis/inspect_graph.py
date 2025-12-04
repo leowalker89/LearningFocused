@@ -11,9 +11,8 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 def inspect_graph():
-    NEO4J_URI = os.getenv("NEO4J_URI")
-    NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
+    from src.config import NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD
+
 
     if not all([NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD]):
         logger.error("Missing Neo4j configuration.")

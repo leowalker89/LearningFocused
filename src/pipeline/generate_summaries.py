@@ -213,6 +213,35 @@ def save_groupings(groups: List[EpisodeGroup], output_dir: Path):
         json.dump(grouping_data, f, indent=2)
     print(f"Saved grouping configuration to {output_path}")
 
+def load_existing_processed_episodes(output_dir: Path) -> set[frozenset]:
+    """
+    Scans the output directory for existing summary files and identifies 
+    which sets of episodes have already been processed.
+    
+    Returns a set of frozensets, where each frozenset contains the filenames 
+    of episodes in a single processed group.
+    """
+    processed_groups = set()
+    
+    if not output_dir.exists():
+        return processed_groups
+
+    for filename in output_dir.glob("summary_*.json"):
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Extract the list of filenames from the summary file
+                episodes = data.get("episodes", [])
+                if episodes:
+                    # Create a frozenset of filenames for this group
+                    group_filenames = frozenset(ep.get("filename") for ep in episodes if ep.get("filename"))
+                    if group_filenames:
+                        processed_groups.add(group_filenames)
+        except Exception as e:
+            print(f"Warning: Could not read existing summary {filename}: {e}")
+            
+    return processed_groups
+
 def process_combined_summaries(transcripts_dir: Path, metadata_dir: Path, output_dir: Path):
     """
     Main function to process and generate combined summaries for all transcripts.
@@ -230,12 +259,27 @@ def process_combined_summaries(transcripts_dir: Path, metadata_dir: Path, output
     # Save the groupings for verification
     save_groupings(groups, output_dir)
     
-    # 3. Process each group
+    # 3. Load existing processed groups to avoid duplicates
+    existing_processed_sets = load_existing_processed_episodes(output_dir)
+    print(f"Found {len(existing_processed_sets)} existing summary groups.")
+
+    # 4. Process each group
     for group in groups:
-        # Check if summary already exists to avoid re-processing? 
-        # For now, let's overwrite or maybe check based on group ID.
-        # But group ID is dynamic based on LLM. 
-        # Let's just process.
+        # Check for duplicates
+        current_group_set = frozenset(group.filenames)
+        
+        # Check for exact match
+        if current_group_set in existing_processed_sets:
+            print(f"Skipping group '{group.group_id}' - already processed (exact match).")
+            continue
+            
+        # Check for superset match (if we already have a summary that includes these files plus others, 
+        # or if a processed group is a subset of this one? 
+        # Let's stick to exact match for now to be safe, as a different grouping might imply a different context.)
+        
+        # Double check if we have a file with a very similar name already?
+        # The safe_name generation might collide if the LLM generates the same ID.
+        # But relying on content (filenames) is more robust against ID changes.
         
         summary_data = generate_combined_summary(group, transcripts_dir, metadata_dir)
         
@@ -245,15 +289,18 @@ def process_combined_summaries(transcripts_dir: Path, metadata_dir: Path, output
             safe_name = safe_name.replace(" ", "_")[:50] # Limit length
             output_path = output_dir / f"summary_{safe_name}.json"
             
+            # Final check: if file exists but wasn't caught by content check (maybe manual edit?)
+            # We overwrite to ensure latest version.
+            
             with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(summary_data, f, indent=2)
             print(f"Saved summary to {output_path}")
+            
+            # Update our local cache so we don't process the same group twice in this run 
+            # (though unlikely given the loop structure)
+            existing_processed_sets.add(current_group_set)
 
 if __name__ == "__main__":
-    base_dir = Path(__file__).parent.parent
-    transcripts_dir = base_dir / "transcripts"
-    metadata_dir = base_dir / "metadata_output"
-    output_dir = base_dir / "combined_summaries"
-    output_dir.mkdir(exist_ok=True)
+    from src.config import TRANSCRIPTS_DIR, METADATA_DIR, COMBINED_DIR
     
-    process_combined_summaries(transcripts_dir, metadata_dir, output_dir)
+    process_combined_summaries(TRANSCRIPTS_DIR, METADATA_DIR, COMBINED_DIR)
