@@ -1,7 +1,7 @@
 import os
 import json
 import argparse
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -14,6 +14,51 @@ load_dotenv()
 from src.config import CHROMA_DIR, COMBINED_DIR, SEGMENTED_DIR
 
 COLLECTION_NAME = "education_knowledge_engine"
+
+def get_vector_store() -> Chroma:
+    """Initialize and return the ChromaDB vector store."""
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    return Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+        persist_directory=str(CHROMA_DIR)
+    )
+
+def query_segments(query: str, k: int = 5, filter_metadata: Optional[Dict[str, Any]] = None) -> List[Document]:
+    """
+    Search for transcript segments in the vector store.
+    
+    Args:
+        query: The search query string.
+        k: Number of results to return.
+        filter_metadata: Optional dictionary to filter by metadata (e.g., {'episode_id': '...'}).
+    """
+    vector_store = get_vector_store()
+    
+    # Force filter for transcript segments
+    filter_dict = {"type": "transcript_segment"}
+    if filter_metadata:
+        filter_dict.update(filter_metadata)
+        
+    return vector_store.similarity_search(query, k=k, filter=filter_dict)
+
+def query_summaries(query: str, k: int = 5) -> List[Document]:
+    """
+    Search for episode and series summaries.
+    Excludes transcript segments to focus on high-level content.
+    """
+    vector_store = get_vector_store()
+    
+    # Filter for anything that IS NOT a transcript_segment
+    # Chroma/LangChain filter syntax for negation or multiple values can be backend-specific.
+    # For robustness, we'll fetch results and filter, or assume the query steers the embedding.
+    # But using the $ne operator if supported is better.
+    try:
+        return vector_store.similarity_search(query, k=k, filter={"type": {"$ne": "transcript_segment"}})
+    except Exception:
+        # Fallback if $ne isn't supported by the version/backend: search all and filter client-side
+        docs = vector_store.similarity_search(query, k=k * 2) # Fetch more to allow for filtering
+        return [d for d in docs if d.metadata.get("type") != "transcript_segment"][:k]
 
 def load_json_file(file_path: str) -> Dict[str, Any]:
     """Load JSON content from a file."""

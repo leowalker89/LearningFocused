@@ -41,6 +41,28 @@ ALLOWED_RELATIONSHIPS = [
     "DISCUSSED"
 ]
 
+def get_graph() -> Neo4jGraph:
+    """Initialize and return the Neo4jGraph connection."""
+    return Neo4jGraph(
+        url=NEO4J_URI,
+        username=NEO4J_USERNAME,
+        password=NEO4J_PASSWORD
+    )
+
+def run_cypher_query(query: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Execute a Cypher query against the knowledge graph."""
+    graph = get_graph()
+    try:
+        return graph.query(query, params=params)
+    except Exception as e:
+        logger.error(f"Cypher query failed: {e}")
+        return []
+
+def get_graph_schema() -> str:
+    """Return the schema of the knowledge graph."""
+    graph = get_graph()
+    return graph.schema
+
 def get_graph_transformer() -> LLMGraphTransformer:
     """Initialize the LLMGraphTransformer with Gemini."""
     llm = ChatGoogleGenerativeAI(
