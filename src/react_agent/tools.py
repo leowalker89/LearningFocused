@@ -18,4 +18,3 @@ Design Notes:
 from src.deep_research_agent.tools import tools, search_knowledge_base, query_knowledge_graph, inspect_graph_schema
 
 __all__ = ["tools", "search_knowledge_base", "query_knowledge_graph", "inspect_graph_schema"]
-
