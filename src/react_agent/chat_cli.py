@@ -2,11 +2,9 @@
 
 Purpose:
     Interactive chat loop for testing the react agent.
-    Simpler than deep_research_agent CLI since we don't have
-    clarification phases, supervisors, or multi-stage output.
     
 Features:
-    - Colored output (ANSI codes) for readability
+    - Colored output (ANSI codes)
     - Streams tool calls and final responses
     - Type 'exit' or Ctrl+C to quit
     
@@ -34,6 +32,8 @@ COLOR_INFO = "\033[36m" if SUPPORTS_COLOR else ""       # cyan
 COLOR_TOOL = "\033[33m" if SUPPORTS_COLOR else ""       # yellow
 COLOR_SUCCESS = "\033[32m" if SUPPORTS_COLOR else ""    # green
 COLOR_PROMPT = "\033[94m" if SUPPORTS_COLOR else ""     # blue
+COLOR_DIM = "\033[90m" if SUPPORTS_COLOR else ""        # gray
+COLOR_BOLD = "\033[1m" if SUPPORTS_COLOR else ""        # bold
 
 
 def _truncate(text: str, limit: int = 600) -> str:
@@ -43,14 +43,9 @@ def _truncate(text: str, limit: int = 600) -> str:
     return text[:limit] + " ...[truncated]..."
 
 
-def _parse_stream_mode(value: str | None) -> Union[str, Sequence[str]]:
-    """Parse REACT_AGENT_STREAM_MODE env var.
-
-    Examples:
-        - unset -> ("updates", "values")
-        - "values" -> "values"
-        - "updates,values" -> ("updates", "values")
-    """
+def _get_stream_mode() -> Union[str, Sequence[str]]:
+    """Parse REACT_AGENT_STREAM_MODE env var."""
+    value = os.environ.get("REACT_AGENT_STREAM_MODE")
     if not value:
         return ("updates", "values")
     raw = value.strip()
@@ -62,19 +57,14 @@ def _parse_stream_mode(value: str | None) -> Union[str, Sequence[str]]:
 
 async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
     """Run one turn through the agent and return updated messages."""
-    print(f"{COLOR_INFO}[Agent thinking...]{COLOR_RESET}")
-    
-    # We'll stream full state values so we can reliably access the growing `messages` list.
-    # (Default streaming yields per-node updates like {"model": ...} which won't include messages.)
-    stream_mode = _parse_stream_mode(os.environ.get("REACT_AGENT_STREAM_MODE"))
-
+    stream_mode = _get_stream_mode()
     final_response: Any = None
     cfg = Configuration()
     run_config = RunnableConfig(recursion_limit=cfg.max_iterations)
 
     last_seen = 0
     latest_messages: List[BaseMessage] = messages
-    last_step: str | None = None
+    
     try:
         async for chunk in react_agent.astream(
             {"messages": messages},
@@ -89,35 +79,25 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
                 # Only process new messages appended since last chunk
                 for msg in chunk_messages[last_seen:]:
                     if isinstance(msg, ToolMessage):
-                        print(f"{COLOR_TOOL}[Tool result]{COLOR_RESET} {_truncate(str(msg.content))}")
+                        print(f"{COLOR_DIM}  └─ Result ({msg.name}): {_truncate(str(msg.content), 200)}{COLOR_RESET}")
                     elif isinstance(msg, AIMessage):
                         if getattr(msg, "tool_calls", None):
-                            tool_names = [tc.get("name", "unknown") for tc in msg.tool_calls]
-                            print(f"{COLOR_TOOL}[Using tools: {', '.join(tool_names)}]{COLOR_RESET}")
-                            # Helpful when debugging: show tool args (compact)
                             for tc in msg.tool_calls:
                                 name = tc.get("name", "unknown")
                                 args = tc.get("args", {})
-                                if args:
-                                    print(f"{COLOR_TOOL}  - {name} args{COLOR_RESET} {args}")
+                                print(f"{COLOR_TOOL}  ┌─ Call: {name}{COLOR_RESET}{COLOR_DIM}({args}){COLOR_RESET}")
                         elif msg.content:
                             final_response = msg.content
-                            print(f"{COLOR_SUCCESS}[Response]{COLOR_RESET} {final_response}")
-                            print("-" * 60)
+                            print(f"\n{COLOR_SUCCESS}=== Agent Response ==={COLOR_RESET}")
+                            print(final_response)
+                            print(f"{COLOR_SUCCESS}======================{COLOR_RESET}\n")
 
                 last_seen = len(chunk_messages)
 
             # stream_mode="updates" yields per-node updates like {"model": ...} / {"tools": ...}
-            # This is useful for step annotations (similar to LangSmith waterfall).
             elif isinstance(chunk, dict):
-                # Usually single-key dicts: {"model": ...} or {"tools": ...}
-                node_names = ", ".join(chunk.keys())
-                if node_names and node_names != last_step:
-                    print(f"{COLOR_INFO}[Step]{COLOR_RESET} {node_names}")
-                    last_step = node_names
-            else:
-                # Unexpected streaming payload
-                print(f"{COLOR_INFO}[Stream]{COLOR_RESET} {type(chunk)}")
+                pass
+                
     except GraphRecursionError as e:
         print(
             f"{COLOR_INFO}Error: {e}{COLOR_RESET}\n"
@@ -130,8 +110,9 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
         for msg in reversed(latest_messages):
             if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None) and msg.content:
                 final_response = msg.content
-                print(f"{COLOR_SUCCESS}[Response]{COLOR_RESET} {final_response}")
-                print("-" * 60)
+                print(f"\n{COLOR_SUCCESS}=== Agent Response ==={COLOR_RESET}")
+                print(final_response)
+                print(f"{COLOR_SUCCESS}======================{COLOR_RESET}\n")
                 break
 
     # Persist state messages for the next turn
@@ -141,7 +122,8 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
 async def main():
     """Main chat loop."""
     load_dotenv()
-    print("React Agent Chat (type 'exit' to quit)")
+    print(f"{COLOR_BOLD}React Agent Chat{COLOR_RESET} (type 'exit' to quit)")
+    print(f"{COLOR_DIM}{'-'*50}{COLOR_RESET}")
     print()
     
     messages: List[BaseMessage] = []
@@ -161,7 +143,8 @@ async def main():
             # Run agent turn
             messages = await run_turn(messages)
             
-            print()  # extra spacing before next prompt
+            print(f"{COLOR_DIM}{'-'*80}{COLOR_RESET}")
+            print()
             
     except KeyboardInterrupt:
         print("\n\nGoodbye!")

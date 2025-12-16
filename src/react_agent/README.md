@@ -44,6 +44,9 @@ User Query
 
 ## Implementation Details
 
+### Dynamic Schema Loading
+The agent dynamically loads the Neo4j graph schema at startup (in `prompts.py`) to minimize tool calls. This allows the agent to write Cypher queries immediately without needing an initial `inspect_graph_schema` call, reducing latency and cost.
+
 ### Multi-Provider Support
 
 The agent supports multiple LLM providers through provider-specific chat model classes:
@@ -159,4 +162,3 @@ Required packages (most already in `pyproject.toml`):
 - `langchain-anthropic` - Anthropic support (`ChatAnthropic`)
 - `langchain-fireworks` - Fireworks AI support (`ChatFireworks`)
 - `python-dotenv` - Environment variable management
-
