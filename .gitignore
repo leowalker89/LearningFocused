@@ -7,7 +7,7 @@ wheels/
 *.egg-info
 
 # Virtual environments
-.venv
+.venv/
 
 # Environment variables
 .env
@@ -25,5 +25,7 @@ neo4j/
 metadata_output/
 
 *.ipynb
-
+.DS_Store
+*.pem
+job_details/
 
