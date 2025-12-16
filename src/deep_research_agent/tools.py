@@ -4,15 +4,22 @@ from src.database.chroma_manager import query_segments, query_summaries
 from src.database.neo4j_manager import run_cypher_query, get_graph_schema
 
 @tool
-def search_knowledge_base(query: str) -> str:
+def search_knowledge_base(query: str, max_segments: int = 5, max_summaries: int = 3) -> str:
     """
     Search the educational podcast transcripts and summaries for specific information.
     Use this to find quotes, definitions, or discussions on specific topics.
-    Returns a formatted string of relevant segments and summaries.
+    
+    Args:
+        query: The search query string.
+        max_segments: Maximum number of transcript segments to return (default: 5).
+        max_summaries: Maximum number of episode summaries to return (default: 3).
+        
+    Returns:
+        A formatted string of relevant segments and summaries.
     """
     # Query both collections (serial execution is fast enough for local Chroma)
-    segments = query_segments(query, k=5)
-    summaries = query_summaries(query, k=3)
+    segments = query_segments(query, k=max_segments)
+    summaries = query_summaries(query, k=max_summaries)
     
     results = []
     
@@ -36,7 +43,10 @@ def query_knowledge_graph(query: str) -> str:
     """
     Run a Cypher query against the Neo4j knowledge graph.
     Use this to find structural relationships, e.g., "Who criticized Alpha parenting?" or "What concepts are related to Agency?".
-    Always check the schema with inspect_graph_schema first if you are unsure of the structure.
+    
+    IMPORTANT:
+    1. Check the schema with inspect_graph_schema ONLY if you do not already have it or are unsure of the structure.
+    2. ALWAYS use a LIMIT clause (e.g., LIMIT 20) to prevent overwhelming response sizes.
     """
     try:
         results = run_cypher_query(query)
