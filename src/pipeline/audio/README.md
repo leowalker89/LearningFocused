@@ -1,0 +1,72 @@
+## Audio pipeline (`src/pipeline/audio/`)
+
+Canonical implementation for the podcast/audio workflow.
+
+### Full pipeline
+
+The canonical runner is `src.pipeline.audio.run`:
+
+```bash
+uv run python -m src.pipeline.audio.run
+```
+
+To skip indexing (Chroma/Neo4j) and only produce files:
+
+```bash
+uv run python -m src.pipeline.audio.run --skip-chroma --skip-neo4j
+```
+
+### Standalone audio orchestrator
+
+Runs: download → transcribe → identify speakers → segment topics
+
+```bash
+uv run python -m src.pipeline.audio.process_all
+```
+
+### Backfill / catch-up runs (recommended for your current state)
+
+Right now you likely have **most audio already downloaded/transcribed**. For example, if `transcripts/` is much larger than `segmented_transcripts/`, use **backfill mode** to only run missing steps.
+
+- **Backfill speaker identification** (only when `speaker_map` is missing), 25 at a time:
+
+```bash
+uv run python -m src.pipeline.audio.process_all --mode backfill --skip-download --skip-transcribe --skip-segment --identify-limit 25
+```
+
+- **Backfill topic segmentation** (only when `*_segmented.json` is missing), 10 at a time:
+
+```bash
+uv run python -m src.pipeline.audio.process_all --mode backfill --skip-download --skip-transcribe --skip-identify --segment-limit 10
+```
+
+- **Scope to a subset of transcripts** (example: only Season 2 episodes if your filenames start with `S2`):
+
+```bash
+uv run python -m src.pipeline.audio.process_all --mode backfill --transcripts-glob 'S2*.json' --identify-limit 25
+uv run python -m src.pipeline.audio.process_all --mode backfill --transcripts-glob 'S2*.json' --segment-limit 10 --skip-identify
+```
+
+### Re-run everything (override the default "only missing" behavior)
+
+```bash
+uv run python -m src.pipeline.audio.process_all --mode backfill --identify-all --identify-limit 25
+uv run python -m src.pipeline.audio.process_all --mode backfill --segment-all --segment-limit 10 --skip-identify
+```
+
+### Individual steps
+
+```bash
+uv run python -m src.pipeline.audio.download
+uv run python -m src.pipeline.audio.transcribe /path/to/episode.mp3
+uv run python -m src.pipeline.audio.identify_speakers /path/to/transcript.json
+uv run python -m src.pipeline.audio.segment_topics
+uv run python -m src.pipeline.audio.generate_summaries
+```
+
+### Outputs (filesystem)
+
+- `podcast_downloads/`: downloaded `.mp3`
+- `transcripts/`: AssemblyAI transcripts (`.json`)
+- `segmented_transcripts/`: topic segments (`*_segmented.json`)
+- `combined_summaries/`: group summaries (`summary_*.json`)

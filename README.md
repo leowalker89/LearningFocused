@@ -58,7 +58,7 @@ uv sync
 The system is designed as a modular pipeline. You can run the core data processing steps with one command:
 
 ```bash
-uv run python -m src.main
+uv run python -m src.pipeline.audio.run
 ```
 
 This script orchestrates:
@@ -67,7 +67,17 @@ This script orchestrates:
 3.  **Identify**: Maps generic "Speaker A" labels to real names (e.g., "MacKenzie Price") using Gemini.
 4.  **Segment**: Breaks transcripts into coherent "Topic Chunks" using Gemini.
 5.  **Summarize**: Generates comprehensive summaries for single episodes or multi-part series.
+6.  **Index (optional)**: Updates Chroma (embeddings) and Neo4j (knowledge graph), unless skipped via flags.
 
+You can also run individual audio steps directly:
+
+```bash
+uv run python -m src.pipeline.audio.download
+uv run python -m src.pipeline.audio.transcribe /path/to/episode.mp3
+uv run python -m src.pipeline.audio.identify_speakers /path/to/transcript.json
+uv run python -m src.pipeline.audio.segment_topics
+uv run python -m src.pipeline.audio.generate_summaries
+```
 ### 5. Building the Knowledge Base
 
 Once the raw data is processed, you populate the searchable databases with these commands:
@@ -109,8 +119,9 @@ uv run python -m src.analysis.investigate_entity "MacKenzie Price"
 
 | File/Directory | Description |
 | :--- | :--- |
-| `src/main.py` | **Main Entry Point**: Orchestrates the data ingestion workflow. |
-| `src/pipeline/` | Contains processing steps: `download`, `transcribe`, `identify_speakers`, `segment_topics`, `generate_summaries`. |
+| `src/pipeline/` | Processing pipelines (separated by source type). |
+| `src/pipeline/audio/` | Audio/podcast pipeline steps. `run.py` is the canonical runner; `process_all.py` is the thin processing-only runner. |
+| `src/pipeline/substack/` | Substack/article pipeline (scaffold; see `planning/substack-plan.md`). |
 | `src/database/` | Database managers: `chroma_manager.py` (Vectors), `neo4j_manager.py` (Graph). |
 | `src/analysis/` | Tools for inspecting data: `inspect_chroma.py`, `inspect_graph.py`, `investigate_entity.py`. |
 | `podcast_downloads/` | Storage for raw audio files. |

@@ -66,7 +66,7 @@ def get_graph_schema() -> str:
 def get_graph_transformer() -> LLMGraphTransformer:
     """Initialize the LLMGraphTransformer with Gemini."""
     llm = ChatGoogleGenerativeAI(
-        model="gemini-flash-latest", 
+        model="gemini-3-flash-preview", 
         temperature=0,
         google_api_key=os.getenv("GOOGLE_API_KEY")
     )
