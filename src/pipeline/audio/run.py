@@ -21,7 +21,7 @@ from typing import Sequence
 
 from dotenv import load_dotenv
 
-from src.config import COMBINED_DIR, METADATA_DIR, TRANSCRIPTS_DIR
+from src.config import COMBINED_DIR, METADATA_DIR, TRANSCRIPTS_DIR, ensure_data_dirs
 from src.database.chroma_manager import update_chroma_db
 from src.database.neo4j_manager import update_knowledge_graph
 from src.pipeline.audio import process_all
@@ -55,6 +55,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip updating the Neo4j knowledge graph.",
     )
     p.add_argument(
+        "--neo4j-schema-profile",
+        choices=["core", "extended"],
+        default=None,
+        help=(
+            "Neo4j relationship schema profile. "
+            "If omitted, uses NEO4J_SCHEMA_PROFILE env var or defaults to 'core'."
+        ),
+    )
+    p.add_argument(
         "--reset-chroma",
         action="store_true",
         help="Reset the Chroma collection before indexing (as supported by update_chroma_db).",
@@ -74,6 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> None:
     load_dotenv()
+    ensure_data_dirs()
     args = build_parser().parse_args(argv)
 
     # argparse.REMAINDER includes the leading "--" (if present). Drop it.
@@ -91,7 +101,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         update_chroma_db(reset=args.reset_chroma)
 
     if not args.skip_neo4j:
-        update_knowledge_graph()
+        update_knowledge_graph(schema_profile=args.neo4j_schema_profile)
 
 
 if __name__ == "__main__":

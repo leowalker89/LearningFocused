@@ -57,16 +57,106 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 if not all([NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD]):
     raise ValueError("Missing Neo4j configuration. Please check your .env file.")
 
-# Allowed schema
-ALLOWED_NODES = ["Person", "Concept", "Organization", "Tool", "Event"]
-ALLOWED_RELATIONSHIPS = [
-    "ADVOCATES_FOR", 
-    "CRITICIZES", 
-    "IMPLEMENTS", 
-    "ENABLES", 
-    "FOUNDED", 
-    "DISCUSSED"
+def _parse_csv_env(name: str) -> list[str] | None:
+    """Parse a comma-separated env var into a list of non-empty strings."""
+    raw = os.getenv(name)
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.split(",")]
+    parts = [p for p in parts if p]
+    return parts or None
+
+
+# Allowed schema (defaults; can be overridden by env vars below)
+_ALLOWED_NODES_CORE = ["Person", "Concept", "Organization", "Tool", "Event"]
+_ALLOWED_RELATIONSHIPS_CORE = [
+    "ADVOCATES_FOR",
+    "CRITICIZES",
+    "IMPLEMENTS",
+    "ENABLES",
+    "FOUNDED",
+    "DISCUSSED",
 ]
+
+# A deliberately modest expansion: adds evidence/causality/comparison semantics that appear often in
+# education research and practitioner writing.
+_ALLOWED_RELATIONSHIPS_EXTENDED = _ALLOWED_RELATIONSHIPS_CORE + [
+    "SUPPORTS",
+    "CONTRADICTS",
+    "EVIDENCE_FOR",
+    "CAUSES",
+    "INFLUENCES",
+    "CORRELATES_WITH",
+    "MEASURES",
+    "RECOMMENDS",
+    "COMPARED_TO",
+    "APPLIES_TO",
+]
+
+def resolve_allowed_schema(schema_profile: str | None = None) -> tuple[list[str], list[str], str]:
+    """Resolve allowed nodes/relationships for the graph transformer.
+
+    Precedence:
+    - explicit function argument (schema_profile) for programmatic/CLI control
+    - env var `NEO4J_SCHEMA_PROFILE` (deployment control)
+    - default: "core"
+
+    Optional env overrides:
+    - `NEO4J_ALLOWED_NODES` (comma-separated) replaces node defaults
+    - `NEO4J_ALLOWED_RELATIONSHIPS` (comma-separated) replaces relationship defaults
+    """
+    # Default to "extended" so the graph is useful for learning science + research expansion
+    # without requiring .env configuration.
+    env_profile = os.getenv("NEO4J_SCHEMA_PROFILE", "extended")
+    profile = (schema_profile if schema_profile is not None else env_profile).strip().lower()
+    if profile not in {"core", "extended"}:
+        profile = "extended"
+
+    allowed_nodes = _parse_csv_env("NEO4J_ALLOWED_NODES") or _ALLOWED_NODES_CORE
+    rel_defaults = _ALLOWED_RELATIONSHIPS_EXTENDED if profile == "extended" else _ALLOWED_RELATIONSHIPS_CORE
+    allowed_relationships = _parse_csv_env("NEO4J_ALLOWED_RELATIONSHIPS") or rel_defaults
+    return allowed_nodes, allowed_relationships, profile
+
+
+def build_graph_extraction_spec(*, allowed_nodes: list[str], allowed_relationships: list[str]) -> str:
+    """Build explicit extraction instructions to prepend to each Document."""
+    return (
+        "You are extracting a knowledge graph from educational content.\n\n"
+        "Extract:\n"
+        f"- Nodes limited to these types: {', '.join(allowed_nodes)}\n"
+        "- Relationships limited to these types:\n"
+        + "\n".join(f"  - {r}" for r in allowed_relationships)
+        + "\n\n"
+        "Rules:\n"
+        "- Only create nodes/edges that are explicitly supported by the text (no guessing).\n"
+        '- Prefer canonical, human-readable names for entities (e.g., "Alpha School", not abbreviations unless used in text).\n'
+        "- If a relationship is ambiguous, omit it rather than inventing it.\n"
+        '- If the text is mostly descriptive with no clear relationship, use "DISCUSSED" where appropriate.\n'
+    )
+
+
+def _wrap_for_graph_extraction(doc: Document, *, graph_extraction_spec: str) -> Document:
+    """Prepend graph extraction instructions and basic provenance to the document text."""
+    title = doc.metadata.get("title") or doc.metadata.get("doc_id") or doc.metadata.get("episode_id")
+    canonical_url = doc.metadata.get("canonical_url")
+    source_type = doc.metadata.get("source_type")
+    topic = doc.metadata.get("topic")
+
+    provenance = []
+    if source_type:
+        provenance.append(f"SourceType: {source_type}")
+    if title:
+        provenance.append(f"Title: {title}")
+    if canonical_url:
+        provenance.append(f"URL: {canonical_url}")
+    if topic:
+        provenance.append(f"Topic: {topic}")
+
+    preamble = graph_extraction_spec + "\n"
+    if provenance:
+        preamble += "Provenance:\n" + "\n".join(f"- {p}" for p in provenance) + "\n\n"
+
+    return Document(page_content=preamble + doc.page_content, metadata=doc.metadata)
 
 def get_graph() -> Neo4jGraph:
     """Initialize and return the Neo4jGraph connection."""
@@ -91,10 +181,10 @@ def get_graph_schema() -> str:
     graph = get_graph()
     return graph.schema
 
-def get_graph_transformer() -> LLMGraphTransformer:
+def get_graph_transformer(*, allowed_nodes: list[str], allowed_relationships: list[str]) -> LLMGraphTransformer:
     """Initialize the LLMGraphTransformer with Gemini."""
     llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview", 
+        model="gemini-flash-latest", 
         temperature=0,
         google_api_key=os.getenv("GOOGLE_API_KEY"),
         # Avoid "hang forever" behavior; override with env var if you want longer.
@@ -103,56 +193,9 @@ def get_graph_transformer() -> LLMGraphTransformer:
     
     return LLMGraphTransformer(
         llm=llm,
-        allowed_nodes=ALLOWED_NODES,
-        allowed_relationships=ALLOWED_RELATIONSHIPS
+        allowed_nodes=allowed_nodes,
+        allowed_relationships=allowed_relationships,
     )
-
-def load_segmented_transcripts(directory: Path) -> List[Document]:
-    """Load all segmented transcripts and convert to Documents."""
-    documents = []
-    files = list(directory.glob("*_segmented.json"))
-    
-    if not files:
-        logger.warning(f"No segmented transcripts found in {directory}")
-        return []
-
-    logger.info(f"Found {len(files)} segmented transcripts")
-    
-    for file_path in files:
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-            episode_id = data.get("episode_id", "Unknown")
-            title = data.get("title", "Unknown")
-            
-            for segment in data.get("segments", []):
-                # Construct metadata
-                metadata = {
-                    "source": str(file_path),
-                    "episode_id": episode_id,
-                    "title": title,
-                    "topic": segment.get("topic"),
-                    "start_time": segment.get("start_time"),
-                    "end_time": segment.get("end_time"),
-                    "speakers": segment.get("speakers", [])
-                }
-                
-                # Use content or summary + content
-                text_content = segment.get("content", "")
-                if not text_content:
-                    continue
-                    
-                doc = Document(
-                    page_content=text_content,
-                    metadata=metadata
-                )
-                documents.append(doc)
-                
-        except Exception as e:
-            logger.error(f"Error reading {file_path}: {e}")
-            
-    return documents
 
 def convert_to_neo4j_graph_documents(docs: List[Any]) -> List[N4jGraphDocument]:
     """
@@ -201,7 +244,7 @@ def _trace_llm_transform(llm_transformer: LLMGraphTransformer, batch: List[Docum
     """LLM graph transformation for a batch (LangSmith-traced)."""
     return llm_transformer.convert_to_graph_documents(batch)
 
-def process_and_store(documents: List[Document]):
+def process_and_store(documents: List[Document], *, llm_transformer: LLMGraphTransformer):
     """Process documents through LLMGraphTransformer and store in Neo4j."""
     
     # Initialize Neo4j connection
@@ -216,8 +259,6 @@ def process_and_store(documents: List[Document]):
         logger.error(f"Failed to connect to Neo4j: {e}")
         return
 
-    llm_transformer = get_graph_transformer()
-    
     total_docs = len(documents)
     logger.info(f"Processing {total_docs} documents...")
     
@@ -253,15 +294,39 @@ def process_and_store(documents: List[Document]):
         except Exception as e:
             logger.error(f"Error processing batch starting at index {i}: {e}")
 
-def update_knowledge_graph():
+def update_knowledge_graph(
+    *,
+    include_articles: bool = True,
+    schema_profile: str | None = None,
+):
     """Main function to update the Neo4j knowledge graph."""
-    from src.config import SEGMENTED_DIR
+    from src.config import SEGMENTED_DIR, SUBSTACK_METADATA_DIR, SUBSTACK_TEXT_DIR, ensure_data_dirs
+
+    ensure_data_dirs()
     
     if not SEGMENTED_DIR.exists():
         logger.error(f"Directory not found: {SEGMENTED_DIR}")
         return
         
-    docs = load_segmented_transcripts(SEGMENTED_DIR)
+    # Pipeline-owned document loaders
+    from src.pipeline.audio.index_neo4j import collect_audio_graph_documents
+    from src.pipeline.substack.index_neo4j import collect_substack_graph_documents
+
+    docs = collect_audio_graph_documents(SEGMENTED_DIR)
+    if include_articles and SUBSTACK_TEXT_DIR.exists() and SUBSTACK_METADATA_DIR.exists():
+        docs.extend(collect_substack_graph_documents(SUBSTACK_TEXT_DIR, SUBSTACK_METADATA_DIR))
+
+    allowed_nodes, allowed_relationships, profile = resolve_allowed_schema(schema_profile)
+    graph_spec = build_graph_extraction_spec(
+        allowed_nodes=allowed_nodes,
+        allowed_relationships=allowed_relationships,
+    )
+    docs = [_wrap_for_graph_extraction(d, graph_extraction_spec=graph_spec) for d in docs]
+    llm_transformer = get_graph_transformer(
+        allowed_nodes=allowed_nodes,
+        allowed_relationships=allowed_relationships,
+    )
+    logger.info("Neo4j schema_profile=%s allowed_nodes=%d allowed_relationships=%d", profile, len(allowed_nodes), len(allowed_relationships))
 
     # Add a run identifier so Neo4j writes can be correlated back to this execution and
     # to the LangSmith project used for tracing.
@@ -274,7 +339,7 @@ def update_knowledge_graph():
     logger.info("Neo4j ingest_run_id=%s langsmith_project=%s", ingest_run_id, langsmith_project)
     
     if docs:
-        process_and_store(docs)
+        process_and_store(docs, llm_transformer=llm_transformer)
     else:
         logger.info("No documents to process.")
 
