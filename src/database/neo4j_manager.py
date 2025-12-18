@@ -1,8 +1,24 @@
+"""
+Neo4j knowledge graph builder.
+
+LangSmith tracing
+To enable traces for the LLM transform + Neo4j write steps, set (e.g., in `.env`):
+- LANGCHAIN_TRACING_V2=true
+- LANGCHAIN_API_KEY=...            # LangSmith API key
+- LANGCHAIN_PROJECT=learningfocused-neo4j
+
+Optional:
+- LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+- NEO4J_GRAPH_LLM_TIMEOUT_SECONDS=120  # fail fast instead of hanging for many minutes
+"""
+
 import os
 import json
 import logging
+import time
+import uuid
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, cast
 from dotenv import load_dotenv
 
 from langchain_neo4j import Neo4jGraph
@@ -11,6 +27,17 @@ from langchain_community.graphs.graph_document import GraphDocument as Community
 from langchain_experimental.graph_transformers import LLMGraphTransformer
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
+
+# LangSmith tracing (optional at runtime; enabled via env vars).
+# If not configured, the decorator is a no-op and adds near-zero overhead.
+try:
+    from langsmith import traceable  # type: ignore
+except Exception:  # pragma: no cover
+    def traceable(*_args: Any, **_kwargs: Any):  # type: ignore
+        def _decorator(fn):  # type: ignore
+            return fn
+
+        return _decorator
 
 # Configure logging
 logging.basicConfig(
@@ -53,7 +80,8 @@ def run_cypher_query(query: str, params: Optional[Dict[str, Any]] = None) -> Lis
     """Execute a Cypher query against the knowledge graph."""
     graph = get_graph()
     try:
-        return graph.query(query, params=params)
+        # Neo4jGraph typing expects dict[Any, Any]; normalize Optional/typed dict to satisfy type checkers.
+        return graph.query(query, params=cast(Dict[Any, Any], (params or {})))
     except Exception as e:
         logger.error(f"Cypher query failed: {e}")
         return []
@@ -68,7 +96,9 @@ def get_graph_transformer() -> LLMGraphTransformer:
     llm = ChatGoogleGenerativeAI(
         model="gemini-3-flash-preview", 
         temperature=0,
-        google_api_key=os.getenv("GOOGLE_API_KEY")
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
+        # Avoid "hang forever" behavior; override with env var if you want longer.
+        timeout=int(os.getenv("NEO4J_GRAPH_LLM_TIMEOUT_SECONDS", "120")),
     )
     
     return LLMGraphTransformer(
@@ -165,6 +195,12 @@ def convert_to_neo4j_graph_documents(docs: List[Any]) -> List[N4jGraphDocument]:
         ))
     return neo4j_docs
 
+
+@traceable(name="neo4j_llm_graph_transform")
+def _trace_llm_transform(llm_transformer: LLMGraphTransformer, batch: List[Document]) -> List[Any]:
+    """LLM graph transformation for a batch (LangSmith-traced)."""
+    return llm_transformer.convert_to_graph_documents(batch)
+
 def process_and_store(documents: List[Document]):
     """Process documents through LLMGraphTransformer and store in Neo4j."""
     
@@ -187,24 +223,31 @@ def process_and_store(documents: List[Document]):
     
     # Process in batches to avoid memory issues and provide progress
     batch_size = 5
+    total_batches = (total_docs + batch_size - 1) // batch_size
     for i in range(0, total_docs, batch_size):
         batch = documents[i:i+batch_size]
-        logger.info(f"Processing batch {i//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size}")
+        batch_num = i // batch_size + 1
+        logger.info(f"Processing batch {batch_num}/{total_batches}")
         
         try:
-            # Convert to graph documents
-            graph_documents_raw = llm_transformer.convert_to_graph_documents(batch)
+            t0 = time.perf_counter()
+            graph_documents_raw = _trace_llm_transform(llm_transformer, batch)
+            t1 = time.perf_counter()
+            logger.info("Batch %s LLM transform time: %.2fs", batch_num, t1 - t0)
             
             # Convert to correct type if necessary
             graph_documents = convert_to_neo4j_graph_documents(graph_documents_raw)
             
             # Add to Neo4j
             if graph_documents:
+                t2 = time.perf_counter()
                 graph.add_graph_documents(
-                    graph_documents, 
-                    baseEntityLabel=True, 
-                    include_source=True
+                    graph_documents,
+                    baseEntityLabel=True,
+                    include_source=True,
                 )
+                t3 = time.perf_counter()
+                logger.info("Batch %s Neo4j write time: %.2fs", batch_num, t3 - t2)
                 logger.info(f"Added {len(graph_documents)} graph documents to Neo4j")
             
         except Exception as e:
@@ -219,6 +262,16 @@ def update_knowledge_graph():
         return
         
     docs = load_segmented_transcripts(SEGMENTED_DIR)
+
+    # Add a run identifier so Neo4j writes can be correlated back to this execution and
+    # to the LangSmith project used for tracing.
+    ingest_run_id = str(uuid.uuid4())
+    langsmith_project = os.getenv("LANGCHAIN_PROJECT")
+    for d in docs:
+        d.metadata["ingest_run_id"] = ingest_run_id
+        if langsmith_project:
+            d.metadata["langsmith_project"] = langsmith_project
+    logger.info("Neo4j ingest_run_id=%s langsmith_project=%s", ingest_run_id, langsmith_project)
     
     if docs:
         process_and_store(docs)
