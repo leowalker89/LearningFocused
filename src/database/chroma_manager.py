@@ -1,7 +1,5 @@
-import os
-import json
 import argparse
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, cast
 from dotenv import load_dotenv
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -11,12 +9,16 @@ from langchain_core.documents import Document
 load_dotenv()
 
 # Constants
-from src.config import CHROMA_DIR, COMBINED_DIR, SEGMENTED_DIR
+from src.config import (
+    CHROMA_DIR,
+    ensure_data_dirs,
+)
 
 COLLECTION_NAME = "education_knowledge_engine"
 
 def get_vector_store() -> Chroma:
     """Initialize and return the ChromaDB vector store."""
+    ensure_data_dirs()
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     return Chroma(
         collection_name=COLLECTION_NAME,
@@ -24,9 +26,16 @@ def get_vector_store() -> Chroma:
         persist_directory=str(CHROMA_DIR)
     )
 
-def query_segments(query: str, k: int = 5, filter_metadata: Optional[Dict[str, Any]] = None) -> List[Document]:
+def query_segments(
+    query: str,
+    k: int = 5,
+    filter_metadata: Optional[Dict[str, Any]] = None,
+    *,
+    allowed_types: Optional[List[str]] = None,
+) -> List[Document]:
     """
-    Search for transcript segments in the vector store.
+    Search for detailed content segments in the vector store.
+    Defaults to transcript segments + short-form article text docs.
     
     Args:
         query: The search query string.
@@ -35,12 +44,25 @@ def query_segments(query: str, k: int = 5, filter_metadata: Optional[Dict[str, A
     """
     vector_store = get_vector_store()
     
-    # Force filter for transcript segments
-    filter_dict = {"type": "transcript_segment"}
+    types = allowed_types or ["transcript_segment", "article_text"]
+    # Prefer server-side filtering, but fall back to client-side if the backend doesn't support $in.
+    filter_dict: Dict[str, Any] = {"type": {"$in": types}}
     if filter_metadata:
         filter_dict.update(filter_metadata)
-        
-    return vector_store.similarity_search(query, k=k, filter=filter_dict)
+
+    try:
+        return vector_store.similarity_search(query, k=k, filter=cast(Any, filter_dict))
+    except Exception:
+        docs = vector_store.similarity_search(query, k=k * 3)
+        filtered = [d for d in docs if d.metadata.get("type") in types]
+        if filter_metadata:
+            def _match_meta(d: Document) -> bool:
+                for mk, mv in filter_metadata.items():
+                    if d.metadata.get(mk) != mv:
+                        return False
+                return True
+            filtered = [d for d in filtered if _match_meta(d)]
+        return filtered[:k]
 
 def query_summaries(query: str, k: int = 5) -> List[Document]:
     """
@@ -54,122 +76,23 @@ def query_summaries(query: str, k: int = 5) -> List[Document]:
     # For robustness, we'll fetch results and filter, or assume the query steers the embedding.
     # But using the $ne operator if supported is better.
     try:
-        return vector_store.similarity_search(query, k=k, filter={"type": {"$ne": "transcript_segment"}})
+        return vector_store.similarity_search(
+            query,
+            k=k,
+            filter=cast(Any, {"type": {"$ne": "transcript_segment"}}),
+        )
     except Exception:
         # Fallback if $ne isn't supported by the version/backend: search all and filter client-side
         docs = vector_store.similarity_search(query, k=k * 2) # Fetch more to allow for filtering
         return [d for d in docs if d.metadata.get("type") != "transcript_segment"][:k]
 
-def load_json_file(file_path: str) -> Dict[str, Any]:
-    """Load JSON content from a file."""
-    with open(file_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
-
-def create_summary_documents(summary_data: Dict[str, Any]) -> List[Document]:
-    """
-    Convert a 'Combined Summary' object into multiple granular Documents for embedding.
-    
-    Strategy: Multi-Vector Representation
-    1. Overview Vector: Title + High Level Summary + Why Listen
-    2. Takeaway Vectors: Individual Key Takeaways
-    3. Motivation Vector: Explicit "Why Listen" vector
-    """
-    documents = []
-    
-    # Extract core metadata
-    group_title = summary_data.get("group_title", "Unknown Series")
-    episode_count = summary_data.get("episode_count", 1)
-    topics = summary_data.get("generated_content", {}).get("topics", [])
-    
-    content = summary_data.get("generated_content", {})
-    high_level_summary = content.get("high_level_summary", "")
-    why_listen = content.get("why_listen", "")
-    key_takeaways = content.get("key_takeaways", [])
-    
-    # 1. Overview Vector
-    # Content: [Group Title] + [High Level Summary]
-    overview_text = f"Series Title: {group_title}\n\nOverview: {high_level_summary}"
-    
-    documents.append(Document(
-        page_content=overview_text,
-        metadata={
-            "type": "series_overview",
-            "group_title": group_title,
-            "episode_count": episode_count,
-            "topics": ", ".join(topics) # Store as string for simple filtering, or keep list if DB supports
-        }
-    ))
-    
-    # 2. Motivation Vector
-    # Content: [Group Title] + Why Listen: [Text]
-    if why_listen:
-        motivation_text = f"Series Title: {group_title}\n\nWhy Listen: {why_listen}"
-        documents.append(Document(
-            page_content=motivation_text,
-            metadata={
-                "type": "series_motivation",
-                "group_title": group_title,
-                "topics": ", ".join(topics)
-            }
-        ))
-        
-    # 3. Takeaway Vectors (Granular)
-    # Content: [Group Title] + Key Takeaway: [Text]
-    for i, takeaway in enumerate(key_takeaways):
-        takeaway_text = f"Series Title: {group_title}\n\nKey Takeaway: {takeaway}"
-        documents.append(Document(
-            page_content=takeaway_text,
-            metadata={
-                "type": "key_takeaway",
-                "group_title": group_title,
-                "takeaway_index": i + 1,
-                "topics": ", ".join(topics)
-            }
-        ))
-        
-    return documents
-
-def create_transcript_documents(transcript_data: Dict[str, Any]) -> List[Document]:
-    """
-    Convert a 'Segmented Transcript' object into Documents.
-    Each topic segment becomes one Document.
-    """
-    documents = []
-    
-    episode_id = transcript_data.get("episode_id", "Unknown ID")
-    title = transcript_data.get("title", "Unknown Title")
-    
-    segments = transcript_data.get("segments", [])
-    
-    for segment in segments:
-        topic = segment.get("topic", "General")
-        content = segment.get("content", "")
-        summary = segment.get("summary", "")
-        speakers = ", ".join(segment.get("speakers", []))
-        start_time = segment.get("start_time")
-        end_time = segment.get("end_time")
-        
-        # Combined text for embedding: Topic + Summary + Full Content
-        # We include the summary to boost semantic matching for high-level queries
-        combined_text = f"Episode: {title}\nTopic: {topic}\nSummary: {summary}\n\nTranscript:\n{content}"
-        
-        documents.append(Document(
-            page_content=combined_text,
-            metadata={
-                "type": "transcript_segment",
-                "episode_id": episode_id,
-                "title": title,
-                "topic": topic,
-                "speakers": speakers,
-                "start_time": start_time,
-                "end_time": end_time
-            }
-        ))
-        
-    return documents
-
 def update_chroma_db(reset: bool = False):
     """Main function to update the ChromaDB vector store."""
+    ensure_data_dirs()
+    # Pipeline-owned indexers (kept out of this DB adapter file)
+    from src.pipeline.audio.index_chroma import collect_audio_documents
+    from src.pipeline.substack.index_chroma import collect_substack_documents
+
     # 1. Initialize Vector Store
     print(f"Initializing ChromaDB in {CHROMA_DIR}...")
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
@@ -185,40 +108,14 @@ def update_chroma_db(reset: bool = False):
     )
     
     all_documents = []
-    
-    # 2. Process Summaries
-    print("Processing Combined Summaries...")
-    if COMBINED_DIR.exists():
-        for filename in os.listdir(COMBINED_DIR):
-            if filename.endswith(".json") and not filename.startswith("episode_groupings"):
-                file_path = os.path.join(COMBINED_DIR, filename)
-                try:
-                    data = load_json_file(file_path)
-                    docs = create_summary_documents(data)
-                    all_documents.extend(docs)
-                    # print(f"  Loaded {len(docs)} vectors from {filename}")
-                except Exception as e:
-                    print(f"  Error processing {filename}: {e}")
-    else:
-        print(f"  Warning: Directory {COMBINED_DIR} not found.")
 
-    # 3. Process Transcripts
-    print("Processing Segmented Transcripts...")
-    if SEGMENTED_DIR.exists():
-        for filename in os.listdir(SEGMENTED_DIR):
-            if filename.endswith(".json"):
-                file_path = os.path.join(SEGMENTED_DIR, filename)
-                try:
-                    data = load_json_file(file_path)
-                    docs = create_transcript_documents(data)
-                    all_documents.extend(docs)
-                    # print(f"  Loaded {len(docs)} vectors from {filename}")
-                except Exception as e:
-                    print(f"  Error processing {filename}: {e}")
-    else:
-        print(f"  Warning: Directory {SEGMENTED_DIR} not found.")
+    print("Collecting audio documents...")
+    all_documents.extend(collect_audio_documents())
+
+    print("Collecting Substack documents...")
+    all_documents.extend(collect_substack_documents())
         
-    # 4. Batch Add to Chroma
+    # Batch Add to Chroma
     if all_documents:
         print(f"Adding {len(all_documents)} documents to ChromaDB...")
         # Add in batches to avoid hitting API limits if any
@@ -234,8 +131,6 @@ def update_chroma_db(reset: bool = False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate embeddings for Knowledge Engine.")
-    parser.add_argument("--summaries_dir", default=str(COMBINED_DIR), help="Directory containing combined summary JSONs")
-    parser.add_argument("--transcripts_dir", default=str(SEGMENTED_DIR), help="Directory containing segmented transcript JSONs")
     parser.add_argument("--reset", action="store_true", help="Delete existing ChromaDB collection before starting")
     args = parser.parse_args()
     

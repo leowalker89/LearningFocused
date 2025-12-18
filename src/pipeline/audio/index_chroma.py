@@ -1,0 +1,149 @@
+"""Audio pipeline -> Chroma indexing helpers.
+
+Pipeline-owned logic:
+- how we convert audio artifacts (combined summaries + segmented transcripts) into Documents
+
+DB-owned logic lives in `src.database.chroma_manager` (connect/query/add).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from typing import Any, Dict, List
+
+from langchain_core.documents import Document
+
+from src.config import COMBINED_DIR, SEGMENTED_DIR
+
+
+def _load_json_file(file_path: str) -> Dict[str, Any]:
+    with open(file_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def create_summary_documents(summary_data: Dict[str, Any]) -> List[Document]:
+    """Convert a combined summary object into multi-vector Documents for embedding."""
+    documents: List[Document] = []
+
+    group_title = summary_data.get("group_title", "Unknown Series")
+    episode_count = summary_data.get("episode_count", 1)
+    topics = summary_data.get("generated_content", {}).get("topics", [])
+
+    content = summary_data.get("generated_content", {}) or {}
+    # Note: audio generator currently uses overview/themes/key_takeaways/value_proposition,
+    # but older embedder expected high_level_summary/why_listen/topics. Keep best-effort.
+    high_level_summary = content.get("high_level_summary") or content.get("overview", "") or ""
+    why_listen = content.get("why_listen") or content.get("value_proposition", "") or ""
+    key_takeaways = content.get("key_takeaways", []) or []
+
+    overview_text = f"Series Title: {group_title}\n\nOverview: {high_level_summary}"
+    documents.append(
+        Document(
+            page_content=overview_text,
+            metadata={
+                "type": "series_overview",
+                "group_title": group_title,
+                "episode_count": episode_count,
+                "topics": ", ".join(topics) if isinstance(topics, list) else str(topics),
+            },
+        )
+    )
+
+    if why_listen:
+        motivation_text = f"Series Title: {group_title}\n\nWhy Listen: {why_listen}"
+        documents.append(
+            Document(
+                page_content=motivation_text,
+                metadata={
+                    "type": "series_motivation",
+                    "group_title": group_title,
+                    "topics": ", ".join(topics) if isinstance(topics, list) else str(topics),
+                },
+            )
+        )
+
+    for i, takeaway in enumerate(key_takeaways):
+        takeaway_text = f"Series Title: {group_title}\n\nKey Takeaway: {takeaway}"
+        documents.append(
+            Document(
+                page_content=takeaway_text,
+                metadata={
+                    "type": "key_takeaway",
+                    "group_title": group_title,
+                    "takeaway_index": i + 1,
+                    "topics": ", ".join(topics) if isinstance(topics, list) else str(topics),
+                },
+            )
+        )
+
+    return documents
+
+
+def create_transcript_documents(transcript_data: Dict[str, Any]) -> List[Document]:
+    """Convert a segmented transcript object into Documents (one per topic segment)."""
+    documents: List[Document] = []
+
+    episode_id = transcript_data.get("episode_id", "Unknown ID")
+    title = transcript_data.get("title", "Unknown Title")
+    segments = transcript_data.get("segments", []) or []
+
+    for segment in segments:
+        topic = segment.get("topic", "General")
+        content = segment.get("content", "") or ""
+        summary = segment.get("summary", "") or ""
+        speakers = ", ".join(segment.get("speakers", []) or [])
+        start_time = segment.get("start_time")
+        end_time = segment.get("end_time")
+
+        if not content:
+            continue
+
+        combined_text = f"Episode: {title}\nTopic: {topic}\nSummary: {summary}\n\nTranscript:\n{content}"
+        documents.append(
+            Document(
+                page_content=combined_text,
+                metadata={
+                    "type": "transcript_segment",
+                    "episode_id": episode_id,
+                    "title": title,
+                    "topic": topic,
+                    "speakers": speakers,
+                    "start_time": start_time,
+                    "end_time": end_time,
+                },
+            )
+        )
+
+    return documents
+
+
+def collect_audio_documents() -> List[Document]:
+    """Collect all audio-derived Documents for Chroma indexing."""
+    documents: List[Document] = []
+
+    # Combined summaries
+    if COMBINED_DIR.exists():
+        for filename in os.listdir(COMBINED_DIR):
+            if filename.endswith(".json") and not filename.startswith("episode_groupings"):
+                path = os.path.join(COMBINED_DIR, filename)
+                try:
+                    data = _load_json_file(path)
+                    documents.extend(create_summary_documents(data))
+                except Exception:
+                    continue
+
+    # Segmented transcripts
+    if SEGMENTED_DIR.exists():
+        for filename in os.listdir(SEGMENTED_DIR):
+            if filename.endswith(".json"):
+                path = os.path.join(SEGMENTED_DIR, filename)
+                try:
+                    data = _load_json_file(path)
+                    documents.extend(create_transcript_documents(data))
+                except Exception:
+                    continue
+
+    return documents
+
+

@@ -24,14 +24,31 @@ def search_knowledge_base(query: str, max_segments: int = 5, max_summaries: int 
     results = []
     
     if summaries:
-        results.append("=== Episode Summaries ===")
+        results.append("=== High-level Summaries (episodes + articles) ===")
         for doc in summaries:
-            results.append(f"Source: {doc.metadata.get('group_title', 'Unknown')}\nContent: {doc.page_content}\n")
+            doc_type = doc.metadata.get("type", "unknown")
+            if str(doc_type).startswith("article_"):
+                title = doc.metadata.get("title", "Unknown Article")
+                results.append(
+                    f"Article: {title}\nType: {doc_type}\nContent: {doc.page_content}\n"
+                )
+            else:
+                results.append(
+                    f"Source: {doc.metadata.get('group_title', 'Unknown')}\nType: {doc_type}\nContent: {doc.page_content}\n"
+                )
     
     if segments:
-        results.append("\n=== Transcript Segments ===")
+        results.append("\n=== Detailed Segments (transcripts + articles) ===")
         for doc in segments:
-            results.append(f"Episode: {doc.metadata.get('title', 'Unknown')}\nTopic: {doc.metadata.get('topic', 'General')}\nContent: {doc.page_content}\n")
+            doc_type = doc.metadata.get("type", "unknown")
+            if doc_type == "article_text":
+                results.append(
+                    f"Article: {doc.metadata.get('title', 'Unknown')}\nContent: {doc.page_content}\n"
+                )
+            else:
+                results.append(
+                    f"Episode: {doc.metadata.get('title', 'Unknown')}\nTopic: {doc.metadata.get('topic', 'General')}\nContent: {doc.page_content}\n"
+                )
             
     if not results:
         return "No relevant information found in the knowledge base."
