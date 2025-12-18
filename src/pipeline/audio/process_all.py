@@ -10,7 +10,14 @@ from typing import Callable, Iterable, Sequence
 
 from dotenv import load_dotenv
 
-from src.config import DOWNLOADS_DIR, METADATA_DIR, RSS_FEED_URL, SEGMENTED_DIR, TRANSCRIPTS_DIR
+from src.config import (
+    DOWNLOADS_DIR,
+    METADATA_DIR,
+    RSS_FEED_URL,
+    SEGMENTED_DIR,
+    TRANSCRIPTS_DIR,
+    ensure_data_dirs,
+)
 from src.pipeline.audio.download import download_podcasts
 from src.pipeline.audio.identify_speakers import identify_speakers, update_transcript_with_speakers
 from src.pipeline.audio.segment_topics import segment_transcript
@@ -131,6 +138,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> None:
     """Entry point for `python -m src.pipeline.audio.process_all`."""
     load_dotenv()
+    ensure_data_dirs()
     args = build_parser().parse_args(argv)
 
     all_transcripts = sorted(TRANSCRIPTS_DIR.glob(args.transcripts_glob))

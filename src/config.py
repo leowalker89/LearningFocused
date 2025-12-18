@@ -1,8 +1,9 @@
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load environment variables (no filesystem side-effects)
 load_dotenv()
 
 # Project Root
@@ -17,12 +18,38 @@ METADATA_DIR = PROJECT_ROOT / "metadata_output"
 COMBINED_DIR = PROJECT_ROOT / "combined_summaries"
 CHROMA_DIR = PROJECT_ROOT / "chroma_db"
 
-# Ensure directories exist
-for directory in [DOWNLOADS_DIR, TRANSCRIPTS_DIR, SEGMENTED_DIR, METADATA_DIR, COMBINED_DIR]:
-    directory.mkdir(parents=True, exist_ok=True)
+# Substack/article artifact directories (parallel to podcast artifacts)
+SUBSTACK_DIR = PROJECT_ROOT / "substack_articles"
+SUBSTACK_METADATA_DIR = SUBSTACK_DIR / "metadata"
+SUBSTACK_HTML_DIR = SUBSTACK_DIR / "html"
+SUBSTACK_TEXT_DIR = SUBSTACK_DIR / "text"
+ARTICLE_SUMMARIES_DIR = PROJECT_ROOT / "article_summaries"
+
+DATA_DIRS = [
+    DOWNLOADS_DIR,
+    TRANSCRIPTS_DIR,
+    SEGMENTED_DIR,
+    METADATA_DIR,
+    COMBINED_DIR,
+    SUBSTACK_METADATA_DIR,
+    SUBSTACK_HTML_DIR,
+    SUBSTACK_TEXT_DIR,
+    ARTICLE_SUMMARIES_DIR,
+]
+
+
+def ensure_data_dirs() -> None:
+    """Create expected data directories.
+
+    Best practice: this should be called explicitly by entrypoints (run/process_all),
+    not executed as a side-effect of importing `src.config`.
+    """
+    for directory in DATA_DIRS:
+        directory.mkdir(parents=True, exist_ok=True)
 
 # External Config
 RSS_FEED_URL = "https://rss.art19.com/future-of-education"
+SUBSTACK_FEED_URL = "https://futureofeducation.substack.com/feed"
 
 # Database Config
 NEO4J_URI = os.getenv("NEO4J_URI")
