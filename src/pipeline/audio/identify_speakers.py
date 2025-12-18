@@ -4,9 +4,10 @@ import sys
 from typing import Dict, List
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import JsonOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+
+from src.pipeline.audio.llm_config import get_speaker_id_llm
 
 # Load environment variables
 load_dotenv()
@@ -39,9 +40,6 @@ def identify_speakers(transcript_path: str) -> Dict[str, str]:
     Returns:
         A dictionary mapping speaker labels (e.g., 'A') to names.
     """
-    if not os.getenv("GOOGLE_API_KEY"):
-        raise ValueError("GOOGLE_API_KEY not found in environment variables.")
-
     print(f"Processing: {transcript_path}")
 
     transcript_data = load_transcript(transcript_path)
@@ -51,7 +49,7 @@ def identify_speakers(transcript_path: str) -> Dict[str, str]:
 
     transcript_text = format_transcript_for_prompt(transcript_data)
 
-    llm = ChatGoogleGenerativeAI(model="gemini-flash-latest", temperature=0.0)
+    llm = get_speaker_id_llm(temperature=0.0)
 
     system_prompt = """
     You are an intelligent assistant tasked with identifying speakers in a podcast transcript.

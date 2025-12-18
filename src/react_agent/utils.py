@@ -7,11 +7,8 @@ Purpose:
 import os
 from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_anthropic import ChatAnthropic
-from langchain_fireworks import ChatFireworks
 from src.react_agent.configuration import Configuration
+from src.llm.factory import create_chat_model as _create_chat_model_shared
 
 # Load environment variables from .env file
 load_dotenv()
@@ -60,12 +57,13 @@ def create_chat_model(
     temperature: Optional[float] = None,
     timeout: Optional[int] = None,
 ) -> Any:
-    """Create chat model instance based on model name. API keys are read from environment variables."""
+    """Create chat model instance based on model name.
+
+    This delegates to the shared `src.llm.factory` so pipelines + agents share one
+    provider selection and env var validation implementation.
+    """
     cfg = Configuration.from_runnable_config(config)
     registry_entry = _resolve_registry_entry(model_name, config)
-    provider = registry_entry.get("provider") or get_model_provider(model_name)
-    env_var = registry_entry.get("env_var")
-    api_key = get_api_key_for_model(model_name, config)
     
     # Enable LangSmith tracing if available
     os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
@@ -75,24 +73,14 @@ def create_chat_model(
     temperature = temperature if temperature is not None else cfg.temperature
     timeout = timeout if timeout is not None else cfg.timeout
 
-    if provider is None:
-        raise ValueError(
-            f"Unknown provider for model '{model_name}'. "
-            "Supported providers: openai, anthropic, google_genai, fireworks"
-        )
-    if env_var and not api_key:
-        raise ValueError(f"Missing API key for model '{model_name}'. Set {env_var}.")
-    
-    if provider == "openai":
-        return ChatOpenAI(model=model_name, temperature=temperature, max_tokens=max_tokens, timeout=timeout)  # type: ignore[call-arg]
-    elif provider == "google_genai":
-        return ChatGoogleGenerativeAI(model=model_name, temperature=temperature, max_output_tokens=max_tokens, timeout=timeout)
-    elif provider == "anthropic":
-        return ChatAnthropic(model_name=model_name, temperature=temperature, max_tokens=max_tokens, timeout=timeout)  # type: ignore[call-arg]
-    elif provider == "fireworks":
-        return ChatFireworks(model=model_name, temperature=temperature, max_tokens=max_tokens, timeout=timeout)
-    else:
-        raise ValueError(f"Unknown provider for model '{model_name}'. Supported providers: openai, anthropic, google_genai, fireworks")
+    # Pass the agent's registry through so custom additions continue to work.
+    return _create_chat_model_shared(
+        model_name=model_name,
+        registry=cfg.model_registry,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=timeout,
+    )
 
 
 def build_tool_legend(tools: List[Any]) -> str:

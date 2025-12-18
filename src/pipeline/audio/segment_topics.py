@@ -4,10 +4,11 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
+
+from src.pipeline.audio.llm_config import get_segmentation_llm
 
 # Load environment variables
 load_dotenv()
@@ -51,11 +52,7 @@ def segment_transcript(file_path: Path, output_dir: Path) -> None:
     data = load_transcript(file_path)
     transcript_text = format_transcript_for_llm(data.get("transcript", []))
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
-        temperature=0,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-    )
+    llm = get_segmentation_llm(temperature=0.0)
 
     parser = PydanticOutputParser(pydantic_object=SegmentationResponse)
 

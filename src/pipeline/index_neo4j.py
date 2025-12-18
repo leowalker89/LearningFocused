@@ -35,7 +35,7 @@ from langchain_neo4j.graphs.graph_document import (
 )
 
 # LLM selection (primary + fallbacks) for graph extraction
-from src.pipeline.neo4j.llm_config import get_graph_llm_models, get_graph_retry_config
+from src.pipeline.neo4j_llm_config import get_graph_llm_models, get_graph_retry_config
 from src.llm.factory import retryable_invoke, RetryConfig
 
 # LangSmith tracing (optional at runtime; enabled via env vars).

@@ -5,29 +5,28 @@ from langchain_core.runnables import RunnableConfig
 
 # Default registry of known models and their providers/api key env vars.
 DEFAULT_MODEL_REGISTRY: Dict[str, Dict[str, str]] = {
-    # OpenAI
-    "gpt-5": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
-    "gpt-5-mini": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
     # Google Gemini
     "gemini-3-pro-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
-    "gemini-1.5-pro": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
+    "gemini-3-flash-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
     # Anthropic
-    "claude-sonnet-4-20250514": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
-    "claude-3-5-sonnet": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
+    # Prefer stable aliases (always latest)
+    "claude-sonnet-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
+    "claude-haiku-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
+    "claude-opus-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
+    # OpenAI
+    "gpt-5.2": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
+    "gpt-5.1": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
+    "gpt-5.1-mini": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
+    # Fireworks
+    "accounts/fireworks/models/deepseek-v3p2": {"provider": "fireworks", "env_var": "FIREWORKS_API_KEY"},
+    "accounts/fireworks/models/kimi-k2-thinking": {"provider": "fireworks", "env_var": "FIREWORKS_API_KEY"},
+    "accounts/fireworks/models/gpt-oss-120b": {"provider": "fireworks", "env_var": "FIREWORKS_API_KEY"},
 }
 
 # Configurable default model family - set here to override all defaults at once
-DEFAULT_MODEL_FAMILY = os.environ.get("DRA_DEFAULT_MODEL_FAMILY", "gpt-5")  # Change "gpt-5" to "gemini-3-pro-preview" for Gemini by default
+DEFAULT_MODEL_FAMILY = os.environ.get("DRA_DEFAULT_MODEL_FAMILY", "gemini-3-pro-preview")
 
 MODEL_FAMILY_TO_DEFAULTS = {
-    "gpt-5": {
-        "planner_model": "gpt-5",
-        "writer_model": "gpt-5",
-        "researcher_model": "gpt-5",
-        "research_model": "gpt-5",
-        "compression_model": "gpt-5",
-        "final_report_model": "gpt-5"
-    },
     "gemini-3-pro-preview": {
         "planner_model": "gemini-3-pro-preview",
         "writer_model": "gemini-3-pro-preview",
@@ -35,6 +34,22 @@ MODEL_FAMILY_TO_DEFAULTS = {
         "research_model": "gemini-3-pro-preview",
         "compression_model": "gemini-3-pro-preview",
         "final_report_model": "gemini-3-pro-preview"
+    },
+    "gpt-5.2": {
+        "planner_model": "gpt-5.2",
+        "writer_model": "gpt-5.2",
+        "researcher_model": "gpt-5.2",
+        "research_model": "gpt-5.2",
+        "compression_model": "gpt-5.2",
+        "final_report_model": "gpt-5.2",
+    },
+    "claude-sonnet-4-5-20250929": {
+        "planner_model": "claude-sonnet-4-5-20250929",
+        "writer_model": "claude-sonnet-4-5-20250929",
+        "researcher_model": "claude-sonnet-4-5-20250929",
+        "research_model": "claude-sonnet-4-5-20250929",
+        "compression_model": "claude-sonnet-4-5-20250929",
+        "final_report_model": "claude-sonnet-4-5-20250929",
     },
 }
 

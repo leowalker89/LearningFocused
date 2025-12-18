@@ -13,33 +13,29 @@ from langchain_core.runnables import RunnableConfig
 
 # Default registry mapping model names to their provider and required API key environment variable.
 DEFAULT_MODEL_REGISTRY: Dict[str, Dict[str, str]] = {
-    # OpenAI
-    "gpt-5":    {"provider": "openai",      "env_var": "OPENAI_API_KEY"},
-    "gpt-5-mini": {"provider": "openai",    "env_var": "OPENAI_API_KEY"},
+    # Google (primary)
+    "gemini-3-pro-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
+    "gemini-3-flash-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
 
-    # Google Gemini
-    "gemini-3-pro-preview":  {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
-    "gemini-flash-latest":   {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
-
-    # Anthropic Claude 4.5 Family
+    # Anthropic (secondary)
+    # Prefer stable aliases (always latest)
     "claude-sonnet-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
-    "claude-haiku-4-5":  {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
+    "claude-haiku-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
+    "claude-opus-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
 
-       # Fireworks AI – OSS
-    # Flagship Llama 4
-    "accounts/fireworks/models/llama4-maverick-instruct-basic": {
-        "provider": "fireworks",
-        "env_var": "FIREWORKS_API_KEY",
-    },
-    # Big Qwen
-    "accounts/fireworks/models/qwen-3-235b-instruct": {
-        "provider": "fireworks",
-        "env_var": "FIREWORKS_API_KEY",
-    },
+    # OpenAI (third)
+    "gpt-5.2": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
+    "gpt-5.1": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
+    "gpt-5.1-mini": {"provider": "openai", "env_var": "OPENAI_API_KEY"},
+
+    # Fireworks (fourth)
+    "accounts/fireworks/models/deepseek-v3p2": {"provider": "fireworks", "env_var": "FIREWORKS_API_KEY"},
+    "accounts/fireworks/models/kimi-k2-thinking": {"provider": "fireworks", "env_var": "FIREWORKS_API_KEY"},
+    "accounts/fireworks/models/gpt-oss-120b": {"provider": "fireworks", "env_var": "FIREWORKS_API_KEY"},
 }
 
 # Configurable default model - set via env var or use default
-DEFAULT_MODEL = os.environ.get("REACT_AGENT_DEFAULT_MODEL", "gpt-5-mini")
+DEFAULT_MODEL = os.environ.get("REACT_AGENT_DEFAULT_MODEL", "gemini-3-flash-preview")
 DEFAULT_MAX_ITERATIONS = int(os.environ.get("REACT_AGENT_MAX_ITERATIONS", "25"))
 
 

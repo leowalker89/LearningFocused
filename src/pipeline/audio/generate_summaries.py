@@ -4,10 +4,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
+
+# LLM selection (primary + fallbacks) is configured via env vars in this helper module.
+from src.pipeline.audio.llm_config import get_grouping_llm, get_combined_summary_llm
 
 # Load environment variables
 load_dotenv()
@@ -87,11 +89,7 @@ def group_episodes(filenames: List[str], metadata_dir: Path) -> List[EpisodeGrou
             }
         )
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-pro",
-        temperature=0,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-    )
+    llm = get_grouping_llm(temperature=0.0)
 
     parser = PydanticOutputParser(pydantic_object=GroupingResponse)
 
@@ -173,11 +171,7 @@ def generate_combined_summary(
     if not full_text:
         return None
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-flash-latest",
-        temperature=0.1,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-    )
+    llm = get_combined_summary_llm(temperature=0.1)
 
     parser = PydanticOutputParser(pydantic_object=CombinedSummary)
 

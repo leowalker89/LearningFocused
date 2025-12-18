@@ -22,10 +22,10 @@ from typing import Any, Optional
 from dotenv import load_dotenv
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
 from src.config import ARTICLE_SUMMARIES_DIR, SUBSTACK_METADATA_DIR, SUBSTACK_TEXT_DIR
+from src.pipeline.substack.llm_config import get_article_summary_llm
 
 load_dotenv()
 
@@ -118,11 +118,7 @@ def summarize_article(
     wc = _word_count(text)
     reading_time = _reading_time_minutes(wc)
 
-    llm = ChatGoogleGenerativeAI(
-        model=model,
-        temperature=temperature,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-    )
+    llm = get_article_summary_llm(model=model, temperature=temperature)
     parser = PydanticOutputParser(pydantic_object=ArticleSummary)
 
     prompt = ChatPromptTemplate.from_messages(
