@@ -33,6 +33,7 @@ Configured in `src/config.py`:
 - **`process_all.py`**: Orchestrates ingest + summarization (no DB writes).
 - **`run.py`**: Full runner that calls `process_all` then optionally updates Chroma.
 - **`index_chroma.py`**: Pipeline-owned logic for converting Substack artifacts into `langchain_core.documents.Document` objects.
+- **`index_neo4j.py`**: Pipeline-owned logic for converting Substack artifacts into `Document` objects for graph extraction.
 
 ## How to run
 
@@ -52,6 +53,14 @@ Backfill ingest (no limit):
 
 ```bash
 uv run python -m src.pipeline.substack.process_all -- --mode backfill
+```
+
+## Neo4j indexing
+
+Substack `run.py` currently does **not** run Neo4j indexing. To build/update the graph (audio + substack docs), run:
+
+```bash
+uv run python -m src.database.neo4j_manager
 ```
 
 ## Environment variables

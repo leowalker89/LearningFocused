@@ -2,6 +2,14 @@
 
 Canonical implementation for the podcast/audio workflow.
 
+### Design (how to read this package)
+
+- `process_all.py` is the **processing-only** runner (files in → files out).
+- `run.py` is the **orchestrator** that calls `process_all`, then optionally runs indexing (Chroma/Neo4j).
+- Indexing logic is split:
+  - Pipeline-owned “what to index”: `index_chroma.py`, `index_neo4j.py`
+  - DB-owned “how to store/query”: `src/database/chroma_manager.py`, `src/database/neo4j_manager.py`
+
 ### Full pipeline
 
 The canonical runner is `src.pipeline.audio.run`:
@@ -14,6 +22,16 @@ To skip indexing (Chroma/Neo4j) and only produce files:
 
 ```bash
 uv run python -m src.pipeline.audio.run --skip-chroma --skip-neo4j
+```
+
+### Neo4j schema profile (graph extraction)
+
+By default the Neo4j graph extraction uses the **extended** relationship schema (good for learning science + research expansion).
+
+If you want a smaller MVP relationship set for a run:
+
+```bash
+uv run python -m src.pipeline.audio.run --neo4j-schema-profile core
 ```
 
 ### Standalone audio orchestrator
