@@ -8,6 +8,7 @@ DB-owned logic lives in `src.database.chroma_manager` (connect/query/add).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from typing import Any, Dict, List
@@ -20,6 +21,9 @@ from src.config import COMBINED_DIR, SEGMENTED_DIR
 def _load_json_file(file_path: str) -> Dict[str, Any]:
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def create_summary_documents(summary_data: Dict[str, Any]) -> List[Document]:
@@ -38,6 +42,8 @@ def create_summary_documents(summary_data: Dict[str, Any]) -> List[Document]:
     key_takeaways = content.get("key_takeaways", []) or []
 
     overview_text = f"Series Title: {group_title}\n\nOverview: {high_level_summary}"
+    # Use group_title + type as unique identifier for ChromaDB deduplication
+    overview_id = f"series_overview_{group_title}"
     documents.append(
         Document(
             page_content=overview_text,
@@ -46,12 +52,16 @@ def create_summary_documents(summary_data: Dict[str, Any]) -> List[Document]:
                 "group_title": group_title,
                 "episode_count": episode_count,
                 "topics": ", ".join(topics) if isinstance(topics, list) else str(topics),
+                "chroma_content_hash": _sha256_text(overview_text),
             },
         )
     )
+    # Store ID in metadata for later use when adding to ChromaDB
+    documents[-1].metadata["_chroma_id"] = overview_id
 
     if why_listen:
         motivation_text = f"Series Title: {group_title}\n\nWhy Listen: {why_listen}"
+        motivation_id = f"series_motivation_{group_title}"
         documents.append(
             Document(
                 page_content=motivation_text,
@@ -59,12 +69,16 @@ def create_summary_documents(summary_data: Dict[str, Any]) -> List[Document]:
                     "type": "series_motivation",
                     "group_title": group_title,
                     "topics": ", ".join(topics) if isinstance(topics, list) else str(topics),
+                    "chroma_content_hash": _sha256_text(motivation_text),
                 },
             )
         )
+        # Store ID in metadata for later use when adding to ChromaDB
+        documents[-1].metadata["_chroma_id"] = motivation_id
 
     for i, takeaway in enumerate(key_takeaways):
         takeaway_text = f"Series Title: {group_title}\n\nKey Takeaway: {takeaway}"
+        takeaway_id = f"key_takeaway_{group_title}_{i + 1}"
         documents.append(
             Document(
                 page_content=takeaway_text,
@@ -73,9 +87,12 @@ def create_summary_documents(summary_data: Dict[str, Any]) -> List[Document]:
                     "group_title": group_title,
                     "takeaway_index": i + 1,
                     "topics": ", ".join(topics) if isinstance(topics, list) else str(topics),
+                    "chroma_content_hash": _sha256_text(takeaway_text),
                 },
             )
         )
+        # Store ID in metadata for later use when adding to ChromaDB
+        documents[-1].metadata["_chroma_id"] = takeaway_id
 
     return documents
 
@@ -100,6 +117,9 @@ def create_transcript_documents(transcript_data: Dict[str, Any]) -> List[Documen
             continue
 
         combined_text = f"Episode: {title}\nTopic: {topic}\nSummary: {summary}\n\nTranscript:\n{content}"
+        # Use episode_id + start_time + topic as unique identifier for ChromaDB deduplication
+        # Fallback to topic index if start_time not available
+        segment_id = f"transcript_segment_{episode_id}_{start_time or 'unknown'}_{topic}"
         documents.append(
             Document(
                 page_content=combined_text,
@@ -111,9 +131,12 @@ def create_transcript_documents(transcript_data: Dict[str, Any]) -> List[Documen
                     "speakers": speakers,
                     "start_time": start_time,
                     "end_time": end_time,
+                    "chroma_content_hash": _sha256_text(combined_text),
                 },
             )
         )
+        # Store ID in metadata for later use when adding to ChromaDB
+        documents[-1].metadata["_chroma_id"] = segment_id
 
     return documents
 

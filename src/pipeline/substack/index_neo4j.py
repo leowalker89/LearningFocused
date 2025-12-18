@@ -60,6 +60,7 @@ def collect_substack_graph_documents(
                         "published_at": meta.get("published_at"),
                         "author": meta.get("author"),
                         "source_type": meta.get("source_type"),
+                        "content_hash": meta.get("content_hash"),
                     },
                 )
             )

@@ -6,6 +6,7 @@ Pipeline-owned logic:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from typing import Any, Dict, List
@@ -18,6 +19,9 @@ from src.config import ARTICLE_SUMMARIES_DIR, SUBSTACK_METADATA_DIR, SUBSTACK_TE
 def _load_json_file(file_path: str) -> Dict[str, Any]:
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def create_article_summary_documents(article_summary: Dict[str, Any]) -> List[Document]:
@@ -62,12 +66,21 @@ def create_article_summary_documents(article_summary: Dict[str, Any]) -> List[Do
     if studies:
         overview_text += f"Studies/Sources mentioned: {', '.join(studies)}\n"
 
+    # Use doc_id + type as unique identifier for ChromaDB deduplication
+    document_id = f"article_summary_{doc_id}"
     documents.append(
         Document(
             page_content=overview_text,
-            metadata={**base_meta, "type": "article_summary_overview"},
+            metadata={
+                **base_meta,
+                "type": "article_summary_overview",
+                # Used to skip re-embedding unchanged documents.
+                "chroma_content_hash": _sha256_text(overview_text),
+            },
         )
     )
+    # Store ID in metadata for later use when adding to ChromaDB
+    documents[-1].metadata["_chroma_id"] = document_id
 
     return documents
 
@@ -80,7 +93,9 @@ def create_article_text_document(*, meta: Dict[str, Any], text: str) -> Document
     author = meta.get("author")
     source = meta.get("source")
     doc_id = meta.get("doc_id", "unknown")
-    return Document(
+    # Use doc_id + type as unique identifier for ChromaDB deduplication
+    document_id = f"article_text_{doc_id}"
+    doc = Document(
         page_content=f"Article: {title}\n\n{text}",
         metadata={
             "type": "article_text",
@@ -91,8 +106,13 @@ def create_article_text_document(*, meta: Dict[str, Any], text: str) -> Document
             "author": author,
             "source": source,
             "source_type": meta.get("source_type"),
+            # Prefer artifact-level content hash if present; otherwise hash the exact text we embed.
+            "chroma_content_hash": meta.get("content_hash") or _sha256_text(f"Article: {title}\n\n{text}"),
         },
     )
+    # Store ID in metadata for later use when adding to ChromaDB
+    doc.metadata["_chroma_id"] = document_id
+    return doc
 
 
 def collect_substack_documents() -> List[Document]:

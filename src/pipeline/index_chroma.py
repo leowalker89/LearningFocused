@@ -1,0 +1,305 @@
+"""Cross-pipeline Chroma indexing orchestrator.
+
+This module owns *how we index* (batching, reset semantics, scoping) while the
+pipeline-specific modules own *what to index* (collecting/converting artifacts).
+
+Why this exists:
+- Keep `src/database/chroma_manager.py` thin (connect/query/upsert helpers for tools).
+- Keep pipeline-specific document construction in:
+  - `src/pipeline/audio/index_chroma.py`
+  - `src/pipeline/substack/index_chroma.py`
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+from typing import cast
+
+from langchain_openai import OpenAIEmbeddings
+from langchain_chroma import Chroma
+
+from src.config import CHROMA_DIR, ensure_data_dirs
+
+COLLECTION_NAME = "education_knowledge_engine"
+
+# Note: historically we produced multiple Substack vector types. Today we primarily use
+# `article_text` + `article_summary_overview`, but cleanup should remove all `article_*` docs.
+SUBSTACK_TYPE_PREFIX = "article_"
+AUDIO_CHROMA_TYPES = ["transcript_segment", "series_overview", "series_motivation", "key_takeaway"]
+
+DESTRUCTIVE_OPS_ENV = "LEARNINGFOCUSED_ALLOW_DESTRUCTIVE_OPS"
+RESET_CHROMA_CONFIRM_TOKEN = "DELETE_ALL_CHROMA"
+
+
+def delete_substack_from_chroma() -> None:
+    """Delete only Substack-derived documents from Chroma (keeps audio vectors).
+
+    This is safer than `reset=True`, which wipes the entire persisted collection.
+    """
+    ensure_data_dirs()
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vector_store = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+        persist_directory=str(CHROMA_DIR),
+    )
+
+    # Robust deletion: scan IDs+metadatas and delete those whose `type` starts with `article_`.
+    # This avoids backend-specific filter limitations and also cleans up older `article_*` types.
+    try:
+        to_delete: list[str] = []
+        offset = 0
+        page_size = 2000
+        while True:
+            data = vector_store._collection.get(  # type: ignore[attr-defined]
+                include=["metadatas"],
+                limit=page_size,
+                offset=offset,
+            )
+            ids = data.get("ids") or []
+            metas = data.get("metadatas") or []
+            if not ids:
+                break
+            for _id, meta in zip(ids, metas):
+                if not isinstance(meta, dict):
+                    continue
+                t = meta.get("type")
+                if isinstance(t, str) and t.startswith(SUBSTACK_TYPE_PREFIX):
+                    to_delete.append(str(_id))
+            offset += len(ids)
+
+        if to_delete:
+            vector_store._collection.delete(ids=to_delete)  # type: ignore[attr-defined]
+        print(f"Deleted {len(to_delete)} Substack documents from Chroma (type startswith '{SUBSTACK_TYPE_PREFIX}').")
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete Substack docs from Chroma: {e}") from e
+
+
+def delete_audio_from_chroma() -> None:
+    """Delete only audio-derived documents from Chroma (keeps Substack vectors).
+
+    Useful for one-time cleanup if legacy runs created duplicates before stable IDs.
+    """
+    ensure_data_dirs()
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vector_store = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+        persist_directory=str(CHROMA_DIR),
+    )
+    try:
+        to_delete: list[str] = []
+        offset = 0
+        page_size = 2000
+        audio_types = set(AUDIO_CHROMA_TYPES)
+        while True:
+            data = vector_store._collection.get(  # type: ignore[attr-defined]
+                include=["metadatas"],
+                limit=page_size,
+                offset=offset,
+            )
+            ids = data.get("ids") or []
+            metas = data.get("metadatas") or []
+            if not ids:
+                break
+            for _id, meta in zip(ids, metas):
+                if not isinstance(meta, dict):
+                    continue
+                t = meta.get("type")
+                if isinstance(t, str) and t in audio_types:
+                    to_delete.append(str(_id))
+            offset += len(ids)
+
+        if to_delete:
+            vector_store._collection.delete(ids=to_delete)  # type: ignore[attr-defined]
+        print(f"Deleted {len(to_delete)} audio documents from Chroma (types: {AUDIO_CHROMA_TYPES}).")
+    except Exception as e:
+        raise RuntimeError(f"Failed to delete audio docs from Chroma: {e}") from e
+
+
+def update_chroma_db(
+    reset: bool = False,
+    *,
+    include_audio: bool = True,
+    include_articles: bool = True,
+    confirm_reset: str | None = None,
+) -> None:
+    """Update the ChromaDB vector store.
+
+    Args:
+        reset: If True, delete the persisted Chroma directory before indexing.
+        include_audio: If True, collect/index audio-derived documents.
+        include_articles: If True, collect/index Substack-derived documents.
+    """
+    ensure_data_dirs()
+
+    # Pipeline-owned indexers (kept out of DB adapter files)
+    from src.pipeline.audio.index_chroma import collect_audio_documents
+    from src.pipeline.substack.index_chroma import collect_substack_documents
+
+    # Reset semantics: delete the entire ChromaDB directory (local dev).
+    # This is a destructive, global operation (audio + substack). Keep it deliberately hard to run.
+    if reset and CHROMA_DIR.exists():
+        if os.getenv(DESTRUCTIVE_OPS_ENV, "").lower() != "true":
+            raise RuntimeError(
+                "Refusing to reset Chroma: destructive ops are disabled.\n"
+                f"To enable, set {DESTRUCTIVE_OPS_ENV}=true and pass "
+                f"confirm_reset='{RESET_CHROMA_CONFIRM_TOKEN}'."
+            )
+        if confirm_reset != RESET_CHROMA_CONFIRM_TOKEN:
+            raise RuntimeError(
+                "Refusing to reset Chroma: missing/invalid confirm token.\n"
+                f"Pass confirm_reset='{RESET_CHROMA_CONFIRM_TOKEN}'."
+            )
+        print(f"Reset flag detected. Deleting existing ChromaDB at {CHROMA_DIR}...")
+        shutil.rmtree(CHROMA_DIR)
+        print("ChromaDB directory deleted.")
+
+    print(f"Initializing ChromaDB in {CHROMA_DIR}...")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+    vector_store = Chroma(
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+        persist_directory=str(CHROMA_DIR),
+    )
+
+    all_documents = []
+    audio_count = 0
+    article_count = 0
+
+    if include_audio:
+        print("Collecting audio documents...")
+        audio_docs = collect_audio_documents()
+        audio_count = len(audio_docs)
+        all_documents.extend(audio_docs)
+        print(f"  Found {audio_count} audio documents")
+
+    if include_articles:
+        print("Collecting Substack documents...")
+        article_docs = collect_substack_documents()
+        article_count = len(article_docs)
+        all_documents.extend(article_docs)
+        # Helpful mental model: Substack indexes ~2 Chroma docs per article.
+        article_ids = {d.metadata.get("doc_id") for d in article_docs if isinstance(d.metadata, dict)}
+        article_ids.discard(None)
+        approx_articles = len(article_ids)
+        if approx_articles:
+            print(f"  Found {article_count} article documents (~{approx_articles} articles)")
+        else:
+            print(f"  Found {article_count} article documents")
+
+    if not all_documents:
+        print("No documents found to index.")
+        return
+
+    # DE-DUPLICATE the list of collected documents by `_chroma_id` before processing.
+    # This prevents crashes if the filesystem contains multiple artifacts for the same ID.
+    unique_docs_by_id = {}
+    dupe_count = 0
+    for doc in all_documents:
+        _id = doc.metadata.get("_chroma_id")
+        if _id in unique_docs_by_id:
+            dupe_count += 1
+        unique_docs_by_id[_id] = doc
+    
+    if dupe_count > 0:
+        print(f"  (Sanity Check) Filtered out {dupe_count} duplicate documents from the collection list.")
+    
+    all_documents = list(unique_docs_by_id.values())
+    print(f"\nPreparing {len(all_documents)} unique documents for ChromaDB (audio: {audio_count}, articles: {article_count})...")
+
+    # Extract IDs from metadata for upserts/deduplication.
+    # Indexers should provide `_chroma_id`. If any are missing, fail loudly so we don't
+    # accidentally create duplicates.
+    document_ids_raw = [doc.metadata.get("_chroma_id") for doc in all_documents]
+    if any(i is None for i in document_ids_raw):
+        missing = sum(1 for i in document_ids_raw if i is None)
+        raise ValueError(
+            f"Chroma indexing requires `_chroma_id` on every Document metadata. Missing={missing}."
+        )
+    document_ids: list[str] = [cast(str, i) for i in document_ids_raw]
+
+    # Extract a stable content hash so we can skip re-embedding unchanged docs.
+    # Indexers should set `chroma_content_hash`; if missing, we’ll still index, but we won’t be able to skip.
+    content_hashes = [doc.metadata.get("chroma_content_hash") for doc in all_documents]
+
+    # Remove `_chroma_id` before persisting metadata (internal plumbing).
+    for doc in all_documents:
+        doc.metadata.pop("_chroma_id", None)
+
+    # Skip unchanged docs by comparing stored `chroma_content_hash` in Chroma metadata.
+    # This prevents re-embedding costs on repeat runs.
+    to_add_docs = []
+    to_add_ids = []
+
+    batch_size = 100
+    total_batches = (len(all_documents) + batch_size - 1) // batch_size
+    skipped_unchanged = 0
+    missing_hash = 0
+    existing_missing_hash = 0
+    existing_not_found = 0
+
+    for i in range(0, len(all_documents), batch_size):
+        batch_docs = all_documents[i : i + batch_size]
+        batch_ids = document_ids[i : i + batch_size]
+        batch_hashes = content_hashes[i : i + batch_size]
+
+        # Fetch existing metadatas for these IDs (if any).
+        existing_hash_by_id: dict[str, str | None] = {}
+        try:
+            existing = vector_store._collection.get(ids=batch_ids, include=["metadatas"])  # type: ignore[attr-defined,arg-type]
+            for _id, meta in zip(existing.get("ids") or [], existing.get("metadatas") or []):
+                if isinstance(meta, dict):
+                    existing_hash_by_id[str(_id)] = cast(str | None, meta.get("chroma_content_hash"))
+        except Exception:
+            existing_hash_by_id = {}
+
+        for doc, _id, h in zip(batch_docs, batch_ids, batch_hashes):
+            if not h:
+                missing_hash += 1
+                to_add_docs.append(doc)
+                to_add_ids.append(_id)
+                continue
+            id_key = str(_id)
+            if id_key not in existing_hash_by_id:
+                existing_not_found += 1
+                to_add_docs.append(doc)
+                to_add_ids.append(_id)
+                continue
+            prev_h = existing_hash_by_id.get(id_key)
+            if prev_h is None:
+                existing_missing_hash += 1
+                to_add_docs.append(doc)
+                to_add_ids.append(_id)
+                continue
+            if prev_h == h:
+                skipped_unchanged += 1
+                continue
+            to_add_docs.append(doc)
+            to_add_ids.append(_id)
+
+        print(f"  Prepared batch {i // batch_size + 1}/{total_batches}")
+
+    print(
+        f"\nIndexing {len(to_add_docs)} documents into ChromaDB "
+        f"(skipped unchanged: {skipped_unchanged}, "
+        f"existing missing hash: {existing_missing_hash}, "
+        f"ids not found: {existing_not_found}, "
+        f"missing hash: {missing_hash})..."
+    )
+
+    if not to_add_docs:
+        print("No new/updated documents to index.")
+        return
+
+    total_batches = (len(to_add_docs) + batch_size - 1) // batch_size
+    for i in range(0, len(to_add_docs), batch_size):
+        batch = to_add_docs[i : i + batch_size]
+        batch_ids = to_add_ids[i : i + batch_size]
+        vector_store.add_documents(documents=batch, ids=batch_ids)  # type: ignore[arg-type]
+        print(f"  Indexed batch {i // batch_size + 1}/{total_batches}")
+
+    print("Success! Embeddings generated.")
+
+

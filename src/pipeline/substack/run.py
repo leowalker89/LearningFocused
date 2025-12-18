@@ -14,8 +14,8 @@ from typing import Sequence
 from dotenv import load_dotenv
 
 from src.config import ensure_data_dirs
-from src.database.chroma_manager import update_chroma_db
-from src.database.neo4j_manager import update_knowledge_graph
+from src.pipeline.index_chroma import delete_substack_from_chroma, update_chroma_db
+from src.pipeline.index_neo4j import update_knowledge_graph
 from src.pipeline.substack import process_all
 
 def build_parser() -> argparse.ArgumentParser:
@@ -26,7 +26,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--skip-processing", action="store_true", help="Skip ingest + summaries.")
     p.add_argument("--skip-chroma", action="store_true", help="Skip updating the Chroma vector DB.")
     p.add_argument("--skip-neo4j", action="store_true", help="Skip updating the Neo4j knowledge graph.")
-    p.add_argument("--reset-chroma", action="store_true", help="Reset the Chroma collection before indexing.")
+    # Destructive option (hidden; requires env+confirm token inside update_chroma_db anyway)
+    p.add_argument("--reset-chroma", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--confirm-reset-chroma", default=None, help=argparse.SUPPRESS)
+    p.add_argument(
+        "--delete-substack-from-chroma",
+        action="store_true",
+        help="Delete ONLY Substack vectors from Chroma (keeps audio). Runs before indexing.",
+    )
     p.add_argument(
         "--neo4j-schema-profile",
         choices=["core", "extended"],
@@ -60,7 +67,15 @@ def main(argv: Sequence[str] | None = None) -> None:
         process_all.main(forwarded)
 
     if not args.skip_chroma:
-        update_chroma_db(reset=bool(args.reset_chroma))
+        if args.delete_substack_from_chroma:
+            delete_substack_from_chroma()
+        # Substack runs should default to indexing only Substack docs to keep runs scoped and cheap.
+        update_chroma_db(
+            reset=bool(args.reset_chroma),
+            include_audio=False,
+            include_articles=True,
+            confirm_reset=args.confirm_reset_chroma,
+        )
 
     if not args.skip_neo4j:
         # For Substack runs, default to indexing only articles (not audio) to keep test runs fast and scoped.

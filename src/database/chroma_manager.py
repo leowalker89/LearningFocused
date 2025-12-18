@@ -86,48 +86,26 @@ def query_summaries(query: str, k: int = 5) -> List[Document]:
         docs = vector_store.similarity_search(query, k=k * 2) # Fetch more to allow for filtering
         return [d for d in docs if d.metadata.get("type") != "transcript_segment"][:k]
 
-def update_chroma_db(reset: bool = False):
-    """Main function to update the ChromaDB vector store."""
-    ensure_data_dirs()
-    # Pipeline-owned indexers (kept out of this DB adapter file)
-    from src.pipeline.audio.index_chroma import collect_audio_documents
-    from src.pipeline.substack.index_chroma import collect_substack_documents
+def update_chroma_db(
+    reset: bool = False,
+    *,
+    include_audio: bool = True,
+    include_articles: bool = True,
+    confirm_reset: str | None = None,
+):
+    """Backwards-compatible wrapper for pipeline indexing.
 
-    # 1. Initialize Vector Store
-    print(f"Initializing ChromaDB in {CHROMA_DIR}...")
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-    
-    if reset and CHROMA_DIR.exists():
-        print("Reset flag detected. Cleaning up existing DB.")
-        # In a real app, you might use shutil.rmtree(CHROMA_DIR)
-        
-    vector_store = Chroma(
-        collection_name=COLLECTION_NAME,
-        embedding_function=embeddings,
-        persist_directory=str(CHROMA_DIR)
+    Note: Indexing orchestration lives in `src/pipeline/index_chroma.py` so this module
+    can remain a thin DB adapter (connect/query helpers) for agent tools.
+    """
+    from src.pipeline.index_chroma import update_chroma_db as _update
+
+    _update(
+        reset=reset,
+        include_audio=include_audio,
+        include_articles=include_articles,
+        confirm_reset=confirm_reset,
     )
-    
-    all_documents = []
-
-    print("Collecting audio documents...")
-    all_documents.extend(collect_audio_documents())
-
-    print("Collecting Substack documents...")
-    all_documents.extend(collect_substack_documents())
-        
-    # Batch Add to Chroma
-    if all_documents:
-        print(f"Adding {len(all_documents)} documents to ChromaDB...")
-        # Add in batches to avoid hitting API limits if any
-        batch_size = 100
-        for i in range(0, len(all_documents), batch_size):
-            batch = all_documents[i:i + batch_size]
-            vector_store.add_documents(documents=batch)
-            print(f"  Indexed batch {i // batch_size + 1}/{(len(all_documents) + batch_size - 1) // batch_size}")
-            
-        print("Success! Embeddings generated.")
-    else:
-        print("No documents found to index.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate embeddings for Knowledge Engine.")

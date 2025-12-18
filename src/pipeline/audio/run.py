@@ -22,8 +22,8 @@ from typing import Sequence
 from dotenv import load_dotenv
 
 from src.config import COMBINED_DIR, METADATA_DIR, TRANSCRIPTS_DIR, ensure_data_dirs
-from src.database.chroma_manager import update_chroma_db
-from src.database.neo4j_manager import update_knowledge_graph
+from src.pipeline.index_chroma import update_chroma_db
+from src.pipeline.index_neo4j import update_knowledge_graph, delete_audio_from_neo4j
 from src.pipeline.audio import process_all
 from src.pipeline.audio.generate_summaries import process_combined_summaries
 
@@ -50,9 +50,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip updating the Chroma vector DB.",
     )
     p.add_argument(
+        "--delete-audio-from-chroma",
+        action="store_true",
+        help="Delete all audio documents from Chroma before indexing (safer than reset).",
+    )
+    p.add_argument(
         "--skip-neo4j",
         action="store_true",
         help="Skip updating the Neo4j knowledge graph.",
+    )
+    p.add_argument(
+        "--delete-audio-from-neo4j",
+        action="store_true",
+        help="Delete all audio documents from Neo4j before indexing.",
     )
     p.add_argument(
         "--neo4j-schema-profile",
@@ -63,11 +73,9 @@ def build_parser() -> argparse.ArgumentParser:
             "If omitted, uses NEO4J_SCHEMA_PROFILE env var or defaults to 'core'."
         ),
     )
-    p.add_argument(
-        "--reset-chroma",
-        action="store_true",
-        help="Reset the Chroma collection before indexing (as supported by update_chroma_db).",
-    )
+    # Destructive option (hidden; requires env+confirm token inside update_chroma_db anyway)
+    p.add_argument("--reset-chroma", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--confirm-reset-chroma", default=None, help=argparse.SUPPRESS)
 
     p.add_argument(
         "process_all_args",
@@ -98,10 +106,25 @@ def main(argv: Sequence[str] | None = None) -> None:
         process_combined_summaries(TRANSCRIPTS_DIR, METADATA_DIR, COMBINED_DIR)
 
     if not args.skip_chroma:
-        update_chroma_db(reset=args.reset_chroma)
+        from src.pipeline.index_chroma import update_chroma_db, delete_audio_from_chroma
+
+        if args.delete_audio_from_chroma:
+            print("\n=== CLEANUP CHROMA (AUDIO) ===")
+            delete_audio_from_chroma()
+
+        # Audio runs should default to indexing only audio docs to keep runs scoped and cheap.
+        update_chroma_db(
+            reset=args.reset_chroma,
+            include_audio=True,
+            include_articles=False,
+            confirm_reset=args.confirm_reset_chroma,
+        )
 
     if not args.skip_neo4j:
-        update_knowledge_graph(schema_profile=args.neo4j_schema_profile)
+        if args.delete_audio_from_neo4j:
+            delete_audio_from_neo4j()
+        # Audio runs: keep graph indexing scoped to audio by default.
+        update_knowledge_graph(include_audio=True, include_articles=False, schema_profile=args.neo4j_schema_profile)
 
 
 if __name__ == "__main__":
