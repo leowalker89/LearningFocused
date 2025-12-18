@@ -17,10 +17,10 @@ from langchain_core.documents import Document
 logger = logging.getLogger(__name__)
 
 
-def collect_audio_graph_documents(segmented_dir: Path) -> List[Document]:
+def collect_audio_graph_documents(segmented_dir: Path, *, limit: int | None = None) -> List[Document]:
     """Load segmented transcripts and convert them to Documents for graph extraction."""
     documents: List[Document] = []
-    files = list(segmented_dir.glob("*_segmented.json"))
+    files = sorted(segmented_dir.glob("*_segmented.json"))
 
     if not files:
         logger.info("No segmented transcripts found in %s", segmented_dir)
@@ -61,6 +61,8 @@ def collect_audio_graph_documents(segmented_dir: Path) -> List[Document]:
                         },
                     )
                 )
+                if limit is not None and len(documents) >= limit:
+                    return documents
         except Exception as e:
             logger.exception("Error reading segmented transcript %s: %s", file_path, e)
 

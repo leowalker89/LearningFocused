@@ -296,7 +296,10 @@ def process_and_store(documents: List[Document], *, llm_transformer: LLMGraphTra
 
 def update_knowledge_graph(
     *,
+    include_audio: bool = True,
     include_articles: bool = True,
+    audio_limit: int | None = None,
+    article_limit: int | None = None,
     schema_profile: str | None = None,
 ):
     """Main function to update the Neo4j knowledge graph."""
@@ -312,9 +315,17 @@ def update_knowledge_graph(
     from src.pipeline.audio.index_neo4j import collect_audio_graph_documents
     from src.pipeline.substack.index_neo4j import collect_substack_graph_documents
 
-    docs = collect_audio_graph_documents(SEGMENTED_DIR)
+    docs: list[Document] = []
+    if include_audio:
+        docs.extend(collect_audio_graph_documents(SEGMENTED_DIR, limit=audio_limit))
     if include_articles and SUBSTACK_TEXT_DIR.exists() and SUBSTACK_METADATA_DIR.exists():
-        docs.extend(collect_substack_graph_documents(SUBSTACK_TEXT_DIR, SUBSTACK_METADATA_DIR))
+        docs.extend(
+            collect_substack_graph_documents(
+                SUBSTACK_TEXT_DIR,
+                SUBSTACK_METADATA_DIR,
+                limit=article_limit,
+            )
+        )
 
     allowed_nodes, allowed_relationships, profile = resolve_allowed_schema(schema_profile)
     graph_spec = build_graph_extraction_spec(
@@ -344,4 +355,24 @@ def update_knowledge_graph(
         logger.info("No documents to process.")
 
 if __name__ == "__main__":
-    update_knowledge_graph()
+    import argparse
+
+    p = argparse.ArgumentParser(description="Build/update Neo4j knowledge graph from pipeline artifacts.")
+    p.add_argument("--schema-profile", choices=["core", "extended"], default=None)
+    p.add_argument("--include-audio", action="store_true", help="Include audio transcript segments (default: on).")
+    p.add_argument("--no-include-audio", action="store_true", help="Exclude audio transcript segments.")
+    p.add_argument("--include-articles", action="store_true", help="Include Substack article text docs (default: on).")
+    p.add_argument("--no-include-articles", action="store_true", help="Exclude Substack article text docs.")
+    p.add_argument("--audio-limit", type=int, default=None, help="Max number of audio Documents to transform/write.")
+    p.add_argument("--article-limit", type=int, default=None, help="Max number of article Documents to transform/write.")
+    args = p.parse_args()
+
+    include_audio = not args.no_include_audio
+    include_articles = not args.no_include_articles
+    update_knowledge_graph(
+        include_audio=include_audio,
+        include_articles=include_articles,
+        audio_limit=args.audio_limit,
+        article_limit=args.article_limit,
+        schema_profile=args.schema_profile,
+    )

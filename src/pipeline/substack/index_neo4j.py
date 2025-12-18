@@ -17,10 +17,15 @@ from langchain_core.documents import Document
 logger = logging.getLogger(__name__)
 
 
-def collect_substack_graph_documents(text_dir: Path, metadata_dir: Path) -> List[Document]:
+def collect_substack_graph_documents(
+    text_dir: Path,
+    metadata_dir: Path,
+    *,
+    limit: int | None = None,
+) -> List[Document]:
     """Load Substack article texts and convert them to Documents for graph extraction."""
     documents: List[Document] = []
-    text_files = list(text_dir.glob("*.md"))
+    text_files = sorted(text_dir.glob("*.md"))
     if not text_files:
         logger.info("No Substack article texts found in %s", text_dir)
         return []
@@ -58,6 +63,8 @@ def collect_substack_graph_documents(text_dir: Path, metadata_dir: Path) -> List
                     },
                 )
             )
+            if limit is not None and len(documents) >= limit:
+                return documents
         except Exception as e:
             logger.exception("Error reading Substack article %s: %s", text_path, e)
 

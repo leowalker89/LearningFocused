@@ -31,3 +31,5 @@ metadata_output/
 *.pem
 job_details/
 
+substack_articles/
+article_summaries/
