@@ -30,8 +30,27 @@ class Stats:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description="Substack pipeline runner")
     p.add_argument("--mode", choices=["daily", "backfill"], default="daily")
+    p.add_argument(
+        "--source",
+        choices=["rss", "archive"],
+        default="rss",
+        help="Content discovery source. RSS is fast but often limited to latest ~20. Archive can paginate older posts (more HTTP GETs).",
+    )
     p.add_argument("--feed-url", default=SUBSTACK_FEED_URL)
-    p.add_argument("--ingest-limit", type=int, default=10)
+    p.add_argument(
+        "--ingest-limit",
+        type=int,
+        default=10,
+        help="For daily mode: target number of NEW/UPDATED articles to ingest (best-effort; limited by feed size).",
+    )
+    p.add_argument(
+        "--ingest-scan-limit",
+        type=int,
+        default=None,
+        help="Max RSS entries to scan while trying to reach --ingest-limit (default: scan entire feed).",
+    )
+    p.add_argument("--archive-page-size", type=int, default=20, help="Archive API page size (if supported).")
+    p.add_argument("--archive-max-pages", type=int, default=None, help="Max archive pages to fetch/scrape (default: no limit).")
     p.add_argument("--summarize-limit", type=int, default=None)
     p.add_argument("--allow-updates", action="store_true", help="Update if content changed.")
     p.add_argument("--force-summaries", action="store_true", help="Regenerate summaries even if present.")
@@ -71,12 +90,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
 
     if not args.skip_ingest:
-        print("\n=== INGEST RSS ===")
-        results = ingest_substack_feed(
-            feed_url=args.feed_url,
-            limit=args.ingest_limit if args.mode == "daily" else None,
-            allow_updates=bool(args.allow_updates),
-        )
+        print(f"\n=== INGEST ({args.source.upper()}) ===")
+        if args.source == "archive":
+            from src.pipeline.substack.archive_ingest import ingest_substack_archive
+
+            results = ingest_substack_archive(
+                feed_url=args.feed_url,
+                target_new=args.ingest_limit if args.mode == "daily" else None,
+                allow_updates=bool(args.allow_updates),
+                page_size=args.archive_page_size,
+                max_pages=args.archive_max_pages,
+            )
+        else:
+            results = ingest_substack_feed(
+                feed_url=args.feed_url,
+                # Daily mode: try to ingest N new/updated items, scanning deeper into the feed if needed.
+                target_new=args.ingest_limit if args.mode == "daily" else None,
+                limit=args.ingest_scan_limit if args.mode == "daily" else None,
+                allow_updates=bool(args.allow_updates),
+            )
         created = len([r for r in results if r.status == "created"])
         updated = len([r for r in results if r.status == "updated"])
         skipped = len([r for r in results if r.status == "skipped"])

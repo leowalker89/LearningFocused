@@ -65,7 +65,7 @@ uv run python -m src.pipeline.substack.process_all -- --mode backfill
 
 ## Neo4j indexing
 
-Substack `run.py` currently does **not** run Neo4j indexing. To build/update the graph (audio + substack docs), run:
+Substack `run.py` can run Neo4j indexing (articles-only by default). To build/update the full graph (audio + substack docs), run:
 
 ```bash
 uv run python -m src.database.neo4j_manager

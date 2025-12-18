@@ -19,27 +19,8 @@ from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import feedparser
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 from src.config import SUBSTACK_FEED_URL, SUBSTACK_HTML_DIR, SUBSTACK_METADATA_DIR, SUBSTACK_TEXT_DIR
-
-
-def get_session() -> requests.Session:
-    """Create a requests session with basic retries (same pattern as audio pipeline)."""
-    session = requests.Session()
-    retry = Retry(
-        total=3,
-        read=3,
-        connect=3,
-        backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("http://", adapter)
-    session.mount("https://", adapter)
-    return session
 
 
 def canonicalize_url(url: str) -> str:
@@ -194,12 +175,23 @@ def ingest_substack_feed(
     source_name: str = "future_of_education_substack",
     source_type: str = "substack_article",
     limit: int | None = None,
+    target_new: int | None = None,
     allow_updates: bool = True,
     metadata_dir: Path = SUBSTACK_METADATA_DIR,
     html_dir: Path = SUBSTACK_HTML_DIR,
     text_dir: Path = SUBSTACK_TEXT_DIR,
 ) -> list[IngestResult]:
-    """Ingest a Substack RSS feed and persist raw+normalized artifacts."""
+    """Ingest a Substack RSS feed and persist raw+normalized artifacts.
+
+    Args:
+        feed_url: RSS feed URL.
+        source_name: Stored in metadata for provenance.
+        source_type: Stored in metadata for provenance.
+        limit: Max number of feed entries to *scan* (not "new items"). If None, scans all entries.
+        target_new: Stop once this many items are created/updated (best-effort; limited by feed size).
+        allow_updates: If False, never overwrite existing artifacts even if content changes.
+        metadata_dir/html_dir/text_dir: Output artifact directories.
+    """
     metadata_dir.mkdir(parents=True, exist_ok=True)
     html_dir.mkdir(parents=True, exist_ok=True)
     text_dir.mkdir(parents=True, exist_ok=True)
@@ -211,6 +203,7 @@ def ingest_substack_feed(
 
     existing = _load_existing_index(metadata_dir)
     results: list[IngestResult] = []
+    new_count = 0
 
     for entry in entries:
         try:
@@ -271,6 +264,10 @@ def ingest_substack_feed(
 
             status = "updated" if prev else "created"
             results.append(IngestResult(status=status, doc_id=doc_id, canonical_url=canonical_url))
+            new_count += 1
+
+            if target_new is not None and new_count >= max(0, target_new):
+                break
         except Exception as e:
             results.append(IngestResult(status="failed", doc_id=None, canonical_url=None, reason=str(e)))
 
