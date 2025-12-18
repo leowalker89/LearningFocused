@@ -42,6 +42,35 @@ def _truncate(text: str, limit: int = 600) -> str:
         return text
     return text[:limit] + " ...[truncated]..."
 
+def _format_ai_content(content: Any) -> str:
+    """Normalize provider-specific message content into a readable string.
+
+    Some providers (notably Gemini) may return content as a list of blocks like:
+      [{"type": "text", "text": "...", "extras": {...}}]
+    We extract the user-visible text and drop huge metadata payloads.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    # Common structured formats: list[dict] with "text"
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text)
+            elif isinstance(item, str) and item.strip():
+                parts.append(item)
+        return "\n".join(parts).strip()
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+    # Fallback: string representation
+    return str(content)
+
 
 def _get_stream_mode() -> Union[str, Sequence[str]]:
     """Parse REACT_AGENT_STREAM_MODE env var."""
@@ -62,7 +91,10 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
     cfg = Configuration()
     run_config = RunnableConfig(recursion_limit=cfg.max_iterations)
 
-    last_seen = 0
+    # Avoid re-printing the entire conversation on every user turn.
+    # The agent will stream a full `messages` list in early chunks; we only want to
+    # render messages added beyond the user's provided history.
+    last_seen = len(messages)
     latest_messages: List[BaseMessage] = messages
     
     try:
@@ -89,7 +121,7 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
                         elif msg.content:
                             final_response = msg.content
                             print(f"\n{COLOR_SUCCESS}=== Agent Response ==={COLOR_RESET}")
-                            print(final_response)
+                            print(_format_ai_content(final_response))
                             print(f"{COLOR_SUCCESS}======================{COLOR_RESET}\n")
 
                 last_seen = len(chunk_messages)
@@ -111,7 +143,7 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
             if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None) and msg.content:
                 final_response = msg.content
                 print(f"\n{COLOR_SUCCESS}=== Agent Response ==={COLOR_RESET}")
-                print(final_response)
+                print(_format_ai_content(final_response))
                 print(f"{COLOR_SUCCESS}======================{COLOR_RESET}\n")
                 break
 
