@@ -21,7 +21,10 @@ def _load_json_file(file_path: str) -> Dict[str, Any]:
 
 
 def create_article_summary_documents(article_summary: Dict[str, Any]) -> List[Document]:
-    """Convert an article summary into multi-vector Documents for embedding."""
+    """Convert an article summary into Documents for embedding.
+
+    Lean default: only emit an overview vector (1 per article) to avoid noisy/bloated indexing.
+    """
     documents: List[Document] = []
 
     doc_id = article_summary.get("doc_id", "unknown")
@@ -35,10 +38,7 @@ def create_article_summary_documents(article_summary: Dict[str, Any]) -> List[Do
     thesis = content.get("thesis", "")
     overview = content.get("overview", "")
     themes = content.get("themes", []) or []
-    key_takeaways = content.get("key_takeaways", []) or []
-    value_proposition = content.get("value_proposition", "")
-    why_reference = content.get("why_reference", "")
-    learning_hooks = content.get("learning_hooks", []) or []
+    # Note: we still *store* these fields in the JSON summary, but do not embed them by default.
     keywords = content.get("keywords", []) or []
     studies = content.get("studies_and_sources", []) or []
 
@@ -68,30 +68,6 @@ def create_article_summary_documents(article_summary: Dict[str, Any]) -> List[Do
             metadata={**base_meta, "type": "article_summary_overview"},
         )
     )
-
-    if why_reference or value_proposition or learning_hooks:
-        motivation_text = (
-            f"Article: {title}\n\n"
-            f"Why it matters: {value_proposition}\n"
-            f"Why reference later: {why_reference}\n"
-        )
-        if learning_hooks:
-            motivation_text += f"\nLearning hooks: {', '.join(learning_hooks)}\n"
-        documents.append(
-            Document(
-                page_content=motivation_text,
-                metadata={**base_meta, "type": "article_summary_motivation"},
-            )
-        )
-
-    for i, takeaway in enumerate(key_takeaways):
-        takeaway_text = f"Article: {title}\n\nKey Takeaway: {takeaway}"
-        documents.append(
-            Document(
-                page_content=takeaway_text,
-                metadata={**base_meta, "type": "article_key_takeaway", "takeaway_index": i + 1},
-            )
-        )
 
     return documents
 

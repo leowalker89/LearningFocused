@@ -14,7 +14,9 @@ This package implements a **text-first ingestion pipeline** for Substack article
     - `learning_hooks` (optional hooks for learning-focused interests when grounded in text)
     - `keywords`, `people`, `orgs`, and `studies_and_sources` (only if explicitly mentioned)
 - **Index (optional)**
-  - **Chroma**: Substack summaries + full article text are embedded and added as Documents.
+  - **Chroma**: Lean indexing by default (2 vectors per article):
+    - `article_text` (full article text)
+    - `article_summary_overview` (thesis + overview + themes/keywords)
   - **Neo4j**: Substack article text can be included in graph extraction (via `src.database.neo4j_manager`).
 
 ## Artifacts (where files land)
@@ -41,6 +43,12 @@ Run the full Substack pipeline (ingest + summaries + Chroma indexing):
 
 ```bash
 uv run python -m src.pipeline.substack.run -- --mode daily --ingest-limit 10
+```
+
+Run an end-to-end test (ingest 10 + summarize + Chroma + Neo4j for 10 articles):
+
+```bash
+uv run python -m src.pipeline.substack.run --neo4j-article-limit 10 -- --mode daily --ingest-limit 10 --allow-updates
 ```
 
 Run processing only (no Chroma indexing):
