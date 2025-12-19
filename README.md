@@ -1,137 +1,180 @@
 # Future of Education Knowledge Engine
 
-A queryable "Second Brain" for the Future of Education podcast archive (and related Substack articles), enabling deep exploration of educational concepts through semantic search and knowledge graphs.
+A queryable “second brain” for the **Future of Education** corpus: podcast audio + transcripts + structured summaries + Substack articles, all wired into **semantic search**, a **knowledge graph**, and **tool-using agents** for research and Q&A.
 
-## Architecture: The "Tri-Store" Approach
+The motivation is simple: take a growing archive of long-form conversations and turn it into something you can *explore*, *cite*, and *reason over*—by concept, person, theme, and supporting source text.
 
-This project implements a robust "Tri-Store" architecture to handle different aspects of knowledge retrieval:
+## What’s interesting here (so far)
 
-1.  **Data Lake (Filesystem)**:
-    -   Stores raw MP3s, AssemblyAI transcripts, and intermediate processed JSONs.
-    -   Serves as the "Ground Truth" archive for all data.
+- **Tri-store architecture**: filesystem artifacts (ground truth) + Chroma (semantic retrieval) + Neo4j (structure + relationships)
+- **Two ingestion pipelines**:
+  - **Audio/podcast** pipeline: download → transcribe → identify speakers → segment → summarize → optional indexing
+  - **Substack** pipeline: ingest RSS → persist metadata/html/text → summarize/tag → optional indexing
+- **Two query agents**:
+  - **Deep Research Agent**: multi-node **LangGraph** workflow for multi-step research and report-style outputs
+  - **React Agent**: lightweight ReAct-style agent for quick Q&A over Chroma + Neo4j
+- **Inspection/visualization tools**: scripts to inspect counts/hubs, visualize embedding clusters, and lookup docs by id
 
-2.  **Semantic Store (ChromaDB)**:
-    -   Stores vector embeddings for **Topic Segments**, **Combined Summaries**, and **Substack article summaries/text**.
-    -   Powered by OpenAI `text-embedding-3-small` for high-precision semantic search.
-    -   Enables natural language queries to find specific discussion points.
+## Architecture: “Tri-Store”
 
-3.  **Knowledge Graph (Neo4j)**:
-    -   Stores structured entities (People, Concepts, Organizations) and their relationships (e.g., `ADVOCATES_FOR`, `CRITICIZES`).
-    -   Extracted using Gemini (via LangChain graph transformers) for structural context.
+- **Data Lake (Filesystem)**: raw MP3s, transcripts, segmented topics, article text/HTML/metadata, generated summaries
+- **Semantic Store (ChromaDB)**: vector embeddings for topic segments + summaries + Substack text/summaries (OpenAI embeddings)
+- **Knowledge Graph (Neo4j)**: entities + relationships extracted from documents (good for “who/what is connected to what?”)
 
-## Quick Start
+## Quick start
 
-### 1. Prerequisites
+### Prereqs
 
--   **Python 3.12+**
--   [uv](https://github.com/astral-sh/uv) for modern Python package management.
--   [Docker](https://www.docker.com/) (optional, if running Neo4j locally).
+- **Python 3.12+**
+- **uv** for dependency/env management
+- **Docker** (optional) if running Neo4j locally
 
-### 2. Environment Setup
+### Environment
 
-Create a `.env` file in the project root with the following keys:
+Create a `.env` in the project root:
 
 ```bash
-# Transcription Service
+# Transcription (audio pipeline)
 ASSEMBLYAI_API_KEY=your_key_here
 
-# LLM & Embeddings
+# LLMs & embeddings
 GOOGLE_API_KEY=your_gemini_key
 OPENAI_API_KEY=your_openai_key
 
-# Knowledge Graph (Neo4j)
+# Neo4j (only needed if running graph indexing / graph queries)
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=your_password
 ```
 
-### 3. Installation
-
-Install dependencies using `uv`:
+### Install
 
 ```bash
 uv sync
 ```
 
-### 4. Running the Pipeline
+### Run Neo4j locally (optional)
 
-The system is designed as a modular pipeline. You can run the core data processing steps with one command:
+```bash
+docker compose up -d
+```
+
+## Pipelines (building the corpus)
+
+### Audio/podcast pipeline (canonical runner)
 
 ```bash
 uv run python -m src.pipeline.audio.run
 ```
 
-This script orchestrates:
-1.  **Download**: Fetches new episodes from the RSS feed.
-2.  **Transcribe**: Converts audio to text using AssemblyAI (with speaker diarization).
-3.  **Identify**: Maps generic "Speaker A" labels to real names (e.g., "MacKenzie Price") using Gemini.
-4.  **Segment**: Breaks transcripts into coherent "Topic Chunks" using Gemini.
-5.  **Summarize**: Generates comprehensive summaries for single episodes or multi-part series.
-6.  **Index (optional)**: Updates Chroma (embeddings) and Neo4j (knowledge graph), unless skipped via flags.
+Skip indexing (filesystem artifacts only):
 
-You can also ingest Substack posts (text-first pipeline):
+```bash
+uv run python -m src.pipeline.audio.run --skip-chroma --skip-neo4j
+```
+
+See deeper docs: `src/pipeline/audio/README.md`.
+
+### Substack pipeline
 
 ```bash
 uv run python -m src.pipeline.substack.run -- --mode daily --ingest-limit 10
 ```
 
-You can also run individual audio steps directly:
+See deeper docs: `src/pipeline/substack/README.md`.
 
-```bash
-uv run python -m src.pipeline.audio.download
-uv run python -m src.pipeline.audio.transcribe /path/to/episode.mp3
-uv run python -m src.pipeline.audio.identify_speakers /path/to/transcript.json
-uv run python -m src.pipeline.audio.segment_topics
-uv run python -m src.pipeline.audio.generate_summaries
-```
-### 5. Building the Knowledge Base
+## Databases (populate/searchable stores)
 
-Once the raw data is processed, you populate the searchable databases with these commands:
+- **Chroma** (vectors):
 
-**Step 1: Create Vector Embeddings (ChromaDB)**
 ```bash
 uv run python -m src.database.chroma_manager
 ```
-*Collects Documents from pipeline-owned indexers (audio + substack), generates embeddings, and stores them in `chroma_db/`.*
 
-**Step 2: Build Knowledge Graph (Neo4j)**
+- **Neo4j** (graph):
+
 ```bash
 uv run python -m src.database.neo4j_manager
 ```
-*Extracts entities + relationships from audio segments and Substack articles and pushes them to your Neo4j instance.*
 
-### 6. Inspecting the Data
+## Agents (query + research)
 
-You can explore the processed data using the analysis tools:
+### Deep Research Agent (LangGraph)
 
-**Inspect ChromaDB (Vector Store)**
+- Interactive chat:
+
 ```bash
-uv run python -m src.analysis.inspect_chroma
-# Optional: Test semantic search
+uv run python -m src.deep_research_agent.chat_cli
+```
+
+- One-shot run:
+
+```bash
+uv run python -m src.deep_research_agent.run
+```
+
+See deeper docs: `src/deep_research_agent/README.md`.
+
+### React Agent (quick Q&A)
+
+```bash
+uv run python -m src.react_agent.chat_cli
+```
+
+See deeper docs: `src/react_agent/README.md`.
+
+## Inspecting and visualizing the stores
+
+### Chroma (vector DB)
+
+- Quick sanity check + search:
+
+```bash
 uv run python -m src.analysis.inspect_chroma --query "parent burnout"
 ```
 
-**Inspect Neo4j (Knowledge Graph)**
+- Visualize clusters (writes `analysis_outputs/`):
+
+```bash
+uv run python -m src.analysis.visualize_chroma --limit 1200 --color-by type
+```
+
+- Investigate a point by id (no embedding API calls needed):
+
+```bash
+uv run python -m src.analysis.chroma_lookup get "<ID>"
+uv run python -m src.analysis.chroma_lookup neighbors "<ID>" --k 10
+```
+
+### Neo4j (knowledge graph)
+
+- Quick schema + hub nodes:
+
 ```bash
 uv run python -m src.analysis.inspect_graph
 ```
 
-**Investigate Specific Entity in Graph**
+- Richer insights (counts, hubs, degree distribution, co-mentions):
+
+```bash
+uv run python -m src.analysis.graph_insights --top-k 25 --explain
+```
+
+- Investigate an entity:
+
 ```bash
 uv run python -m src.analysis.investigate_entity "MacKenzie Price"
 ```
 
-## Project Structure & Components
+## Project structure (high level)
 
-| File/Directory | Description |
-| :--- | :--- |
-| `src/pipeline/` | Processing pipelines (separated by source type). |
-| `src/pipeline/audio/` | Audio/podcast pipeline steps. `run.py` is the canonical runner; `process_all.py` is the thin processing-only runner. |
-| `src/pipeline/substack/` | Substack/article pipeline. `run.py` orchestrates ingest+summaries and can update Chroma; `process_all.py` is processing-only. |
-| `src/database/` | Database managers (thin adapters/orchestrators): `chroma_manager.py` (Vectors), `neo4j_manager.py` (Graph). Pipeline-owned indexers live under `src/pipeline/*/index_*.py`. |
-| `src/analysis/` | Tools for inspecting data: `inspect_chroma.py`, `inspect_graph.py`, `investigate_entity.py`. |
-| `podcast_downloads/` | Storage for raw audio files. |
-| `transcripts/` | Raw JSON transcripts with speaker diarization. |
-| `segmented_transcripts/` | Transcripts split by topic (ready for RAG). |
-| `combined_summaries/` | Series-level summaries and grouping logic. |
-| `chroma_db/` | Local persistence for the vector database. |
+- **`src/pipeline/`**: ingestion and processing pipelines (audio + Substack)
+- **`src/database/`**: thin DB adapters/orchestrators (Chroma + Neo4j)
+- **`src/analysis/`**: inspection/visualization tooling
+- **`src/deep_research_agent/`**: LangGraph deep research CLI agent
+- **`src/react_agent/`**: lightweight ReAct-style CLI agent
+
+## Notes
+
+- Generated analysis artifacts land in `analysis_outputs/` and are git-ignored.
+- The detailed, “how to run this source” docs live alongside implementations under `src/pipeline/*/README.md`.
