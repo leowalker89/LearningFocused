@@ -6,7 +6,13 @@ to answer questions about the Future of Education podcast episodes.
 
 from src.react_agent.graph import react_agent, get_react_agent
 from src.react_agent.configuration import Configuration
-from src.react_agent.tools import tools, search_knowledge_base, query_knowledge_graph, inspect_graph_schema
+from src.react_agent.tools import (
+    tools,
+    search_knowledge_base,
+    search_knowledge_base_structured,
+    query_knowledge_graph,
+    inspect_graph_schema,
+)
 
 __all__ = [
     "react_agent",
@@ -14,6 +20,7 @@ __all__ = [
     "Configuration",
     "tools",
     "search_knowledge_base",
+    "search_knowledge_base_structured",
     "query_knowledge_graph",
     "inspect_graph_schema",
 ]

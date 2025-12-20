@@ -15,6 +15,18 @@ Design Notes:
 """
 
 # Re-export tools from the shared location
-from src.deep_research_agent.tools import tools, search_knowledge_base, query_knowledge_graph, inspect_graph_schema
+from src.deep_research_agent.tools import (
+    tools,
+    search_knowledge_base,
+    search_knowledge_base_structured,
+    query_knowledge_graph,
+    inspect_graph_schema,
+)
 
-__all__ = ["tools", "search_knowledge_base", "query_knowledge_graph", "inspect_graph_schema"]
+__all__ = [
+    "tools",
+    "search_knowledge_base",
+    "search_knowledge_base_structured",
+    "query_knowledge_graph",
+    "inspect_graph_schema",
+]

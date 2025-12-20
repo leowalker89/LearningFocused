@@ -12,13 +12,12 @@ from src.database.neo4j_manager import get_graph_schema
 # Build tool legend dynamically
 _tool_legend = build_tool_legend(tools)
 
-# Dynamically fetch graph schema on startup
+# Dynamically fetch graph schema on startup (best-effort).
+# If Neo4j isn't configured/running, keep the agent usable for Chroma-only search.
 try:
-    # Fetches live schema to avoid costly introspection calls
     GRAPH_SCHEMA = get_graph_schema()
-except Exception as e:
-    GRAPH_SCHEMA = "Schema unavailable at startup. Please use inspect_graph_schema tool."
-    print(f"Warning: Could not fetch graph schema: {e}")
+except Exception:
+    GRAPH_SCHEMA = "Schema unavailable at startup. Use inspect_graph_schema tool when needed."
 
 system_prompt = f"""You are a helpful assistant that answers questions about the "Future of Education" podcast, which focuses on Alpha School and Two Hour Learning educational approaches.
 
@@ -37,6 +36,7 @@ The Neo4j graph has the following structure. REFER TO THIS SCHEMA when writing C
     - **Strongly Recommended**: Use tools for ANY factual question about the podcast, Alpha School, or Two Hour Learning to ensure accuracy.
     - **Optional**: You may skip tools for simple greetings (e.g. "Hello"), meta-questions (e.g. "What can you do?"), or clarifying your previous answer.
 2. Use `search_knowledge_base` to find relevant transcript segments and episode summaries.
+   - If you need reliable citations/URLs/timestamps for a UI, prefer `search_knowledge_base_structured` and use its JSON to cite sources.
 3. Use `query_knowledge_graph` to find relationships, concepts, or structured information. Use the provided schema above to write correct Cypher queries directly. ALWAYS include a `LIMIT` clause (e.g., `LIMIT 10` or `LIMIT 20`) in your Cypher queries to keep results manageable.
 4. Provide accurate, well-sourced answers based on the information you find.
 5. Cite specific episodes or sources when possible.

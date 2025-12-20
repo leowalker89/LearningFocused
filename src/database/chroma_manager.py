@@ -64,27 +64,35 @@ def query_segments(
             filtered = [d for d in filtered if _match_meta(d)]
         return filtered[:k]
 
-def query_summaries(query: str, k: int = 5) -> List[Document]:
+def query_summaries(
+    query: str,
+    k: int = 5,
+    *,
+    allowed_types: Optional[List[str]] = None,
+) -> List[Document]:
     """
     Search for episode and series summaries.
     Excludes transcript segments to focus on high-level content.
     """
     vector_store = get_vector_store()
-    
-    # Filter for anything that IS NOT a transcript_segment
-    # Chroma/LangChain filter syntax for negation or multiple values can be backend-specific.
-    # For robustness, we'll fetch results and filter, or assume the query steers the embedding.
-    # But using the $ne operator if supported is better.
+
+    # Summary-like doc types across audio + Substack. Keep this conservative so "summaries"
+    # doesn't accidentally return full article text.
+    types = allowed_types or [
+        "series_overview",
+        "series_motivation",
+        "key_takeaway",
+        "article_summary_overview",
+    ]
+
+    # Prefer server-side $in filtering, but fall back to client-side if unsupported.
+    filter_dict: Dict[str, Any] = {"type": {"$in": types}}
     try:
-        return vector_store.similarity_search(
-            query,
-            k=k,
-            filter=cast(Any, {"type": {"$ne": "transcript_segment"}}),
-        )
+        return vector_store.similarity_search(query, k=k, filter=cast(Any, filter_dict))
     except Exception:
-        # Fallback if $ne isn't supported by the version/backend: search all and filter client-side
-        docs = vector_store.similarity_search(query, k=k * 2) # Fetch more to allow for filtering
-        return [d for d in docs if d.metadata.get("type") != "transcript_segment"][:k]
+        docs = vector_store.similarity_search(query, k=k * 3)
+        filtered = [d for d in docs if d.metadata.get("type") in types]
+        return filtered[:k]
 
 def update_chroma_db(
     reset: bool = False,

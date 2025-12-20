@@ -28,20 +28,25 @@ logger = logging.getLogger(__name__)
 # Load environment variables
 load_dotenv()
 
-# Configuration
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
-if not all([NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD]):
-    raise ValueError("Missing Neo4j configuration. Please check your .env file.")
+def _get_neo4j_env() -> tuple[str, str, str]:
+    """Return Neo4j connection env vars or raise a helpful error."""
+    uri = os.getenv("NEO4J_URI")
+    username = os.getenv("NEO4J_USERNAME")
+    password = os.getenv("NEO4J_PASSWORD")
+    if not all([uri, username, password]):
+        raise ValueError(
+            "Missing Neo4j configuration. Please check your .env file.\n"
+            "Required: NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD"
+        )
+    return uri, username, password
 
 def get_graph() -> Neo4jGraph:
     """Initialize and return the Neo4jGraph connection."""
+    uri, username, password = _get_neo4j_env()
     return Neo4jGraph(
-        url=NEO4J_URI,
-        username=NEO4J_USERNAME,
-        password=NEO4J_PASSWORD
+        url=uri,
+        username=username,
+        password=password,
     )
 
 def run_cypher_query(query: str, params: Optional[dict[str, Any]] = None) -> list[dict[str, Any]]:
