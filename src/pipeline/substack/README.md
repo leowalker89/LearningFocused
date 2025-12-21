@@ -8,11 +8,7 @@ This package implements a **text-first ingestion pipeline** for Substack article
   - Persist **metadata**, **raw HTML**, and **normalized text** (markdown-ish)
   - Idempotent by **canonical URL** + **content hash**
 - **Summarize + tag**
-  - Generates a structured, embed-friendly summary object:
-    - `thesis`, `overview`, `themes`, `key_takeaways`, `value_proposition`
-    - `why_reference` (why you’d look this up later)
-    - `learning_hooks` (optional hooks for learning-focused interests when grounded in text)
-    - `keywords`, `people`, `orgs`, and `studies_and_sources` (only if explicitly mentioned)
+  - Generates a structured summary object (thesis/overview/themes/takeaways + extracted entities when explicit in text)
 - **Index (optional)**
   - **Chroma**: Lean indexing by default (2 vectors per article):
     - `article_text` (full article text)
@@ -80,5 +76,3 @@ uv run python -m src.database.neo4j_manager
   - Optional schema expansion:
     - `NEO4J_SCHEMA_PROFILE=core|extended` (default: `extended`)
     - `NEO4J_ALLOWED_NODES` / `NEO4J_ALLOWED_RELATIONSHIPS` (comma-separated overrides)
-
-

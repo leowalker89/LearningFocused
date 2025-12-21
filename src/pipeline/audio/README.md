@@ -42,9 +42,9 @@ Runs: download → transcribe → identify speakers → segment topics
 uv run python -m src.pipeline.audio.process_all
 ```
 
-### Backfill / catch-up runs (recommended for your current state)
+### Backfill / catch-up runs
 
-Right now you likely have **most audio already downloaded/transcribed**. For example, if `transcripts/` is much larger than `segmented_transcripts/`, use **backfill mode** to only run missing steps.
+Use **backfill mode** to only run missing steps across existing `transcripts/` (and to batch work with limits).
 
 - **Backfill speaker identification** (only when `speaker_map` is missing), 25 at a time:
 

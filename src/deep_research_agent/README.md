@@ -11,8 +11,6 @@ This folder hosts the multi-node LangGraph “deep research” agent that coordi
 - `chat_cli.py` — Interactive CLI entrypoint (loads `.env`, streams graph events, colorized output).
 - `run.py` — One-shot CLI entrypoint for a single query (non-interactive).
 
-Notes for building a simpler React agent
-- You can start from `langgraph.prebuilt.create_react_agent` with a much smaller set of nodes: a single LLM node plus the tool calls (`search_knowledge_base`, `query_knowledge_graph`, `inspect_graph_schema`).
-- Reuse `tools.py` directly; you only need to wire them into the prebuilt agent and provide a concise system prompt that reminds the model it should prefer internal data (Chroma + Neo4j) over the open web.
-- Keep the state minimal (messages list) and drop supervisor/worker/subgraphs unless you need coordination or multi-iteration planning.
+Related
+- For a lighter-weight Q&A loop over the same tools/stores, see `src/react_agent/`.
 

@@ -1,25 +1,17 @@
 # Future of Education Knowledge Engine
 
-A queryable “second brain” for the **Future of Education** corpus: podcast audio + transcripts + structured summaries + Substack articles, all wired into **semantic search**, a **knowledge graph**, and **tool-using agents** for research and Q&A.
+Build a queryable knowledge base from a corpus of podcast audio + transcripts + derived summaries + Substack articles. It supports:
 
-The motivation is simple: take a growing archive of long-form conversations and turn it into something you can *explore*, *cite*, and *reason over*—by concept, person, theme, and supporting source text.
+- **Filesystem artifacts** (ground truth outputs)
+- **Chroma** (semantic retrieval)
+- **Neo4j** (entities + relationships)
+- **CLI agents** for Q&A and research
 
-## What’s interesting here (so far)
+## Stores (high level)
 
-- **Tri-store architecture**: filesystem artifacts (ground truth) + Chroma (semantic retrieval) + Neo4j (structure + relationships)
-- **Two ingestion pipelines**:
-  - **Audio/podcast** pipeline: download → transcribe → identify speakers → segment → summarize → optional indexing
-  - **Substack** pipeline: ingest RSS → persist metadata/html/text → summarize/tag → optional indexing
-- **Two query agents**:
-  - **Deep Research Agent**: multi-node **LangGraph** workflow for multi-step research and report-style outputs
-  - **React Agent**: lightweight ReAct-style agent for quick Q&A over Chroma + Neo4j
-- **Inspection/visualization tools**: scripts to inspect counts/hubs, visualize embedding clusters, and lookup docs by id
-
-## Architecture: “Tri-Store”
-
-- **Data Lake (Filesystem)**: raw MP3s, transcripts, segmented topics, article text/HTML/metadata, generated summaries
-- **Semantic Store (ChromaDB)**: vector embeddings for topic segments + summaries + Substack text/summaries (OpenAI embeddings)
-- **Knowledge Graph (Neo4j)**: entities + relationships extracted from documents (good for “who/what is connected to what?”)
+- **Filesystem**: raw MP3s, transcripts, segmented topics, generated summaries
+- **Chroma**: embeddings for transcript segments + summary-like docs + Substack text/summaries
+- **Neo4j**: graph extraction over Documents (good for “what’s connected to what?”)
 
 ## Quick start
 
@@ -85,13 +77,13 @@ See deeper docs: `src/pipeline/substack/README.md`.
 
 ## Databases (populate/searchable stores)
 
-- **Chroma** (vectors):
+- **Chroma** (vectors; builds/updates from pipeline artifacts):
 
 ```bash
 uv run python -m src.database.chroma_manager
 ```
 
-- **Neo4j** (graph):
+- **Neo4j** (graph; builds/updates from pipeline artifacts):
 
 ```bash
 uv run python -m src.database.neo4j_manager
