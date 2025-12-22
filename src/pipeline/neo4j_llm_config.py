@@ -24,8 +24,9 @@ def get_graph_llm_models(*, temperature: float = 0.0) -> list[Any]:
     models = parse_model_list(
         os.getenv("LF_NEO4J_GRAPH_MODELS"),
         default=[
-            "gemini-3-pro-preview",
-            "gemini-3-flash-preview",
+            "gemini-flash-latest",
+            "claude-haiku-4-5",
+            "gpt-5.1-mini",
             "claude-sonnet-4-5",
             "gpt-5.2",
             "accounts/fireworks/models/deepseek-v3p2",

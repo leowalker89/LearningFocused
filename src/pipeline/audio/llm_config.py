@@ -46,8 +46,9 @@ def get_grouping_llm(*, temperature: float = 0.0) -> Any:
     models = parse_model_list(
         os.getenv("LF_AUDIO_GROUPING_MODELS"),
         default=[
-            "gemini-3-pro-preview",
-            "gemini-3-flash-preview",
+            "gemini-flash-latest",
+            "claude-haiku-4-5",
+            "gpt-5.1-mini",
             "claude-sonnet-4-5",
             "gpt-5.2",
             "accounts/fireworks/models/deepseek-v3p2",
@@ -67,10 +68,11 @@ def get_combined_summary_llm(*, temperature: float = 0.1) -> Any:
     models = parse_model_list(
         os.getenv("LF_AUDIO_COMBINED_SUMMARY_MODELS"),
         default=[
-            "gemini-3-pro-preview",
-            "gemini-3-flash-preview",
+            "gemini-flash-latest",
             "claude-sonnet-4-5",
             "gpt-5.2",
+            "claude-haiku-4-5",
+            "gpt-5.1-mini",
             "accounts/fireworks/models/deepseek-v3p2",
         ],
     )
@@ -88,8 +90,7 @@ def get_segmentation_llm(*, temperature: float = 0.0) -> Any:
     models = parse_model_list(
         os.getenv("LF_AUDIO_SEGMENTATION_MODELS"),
         default=[
-            "gemini-3-flash-preview",
-            "gemini-3-pro-preview",
+            "gemini-flash-latest",
             "claude-haiku-4-5",
             "gpt-5.1-mini",
             "accounts/fireworks/models/gpt-oss-120b",
@@ -109,8 +110,7 @@ def get_speaker_id_llm(*, temperature: float = 0.0) -> Any:
     models = parse_model_list(
         os.getenv("LF_AUDIO_SPEAKER_ID_MODELS"),
         default=[
-            "gemini-3-pro-preview",
-            "gemini-3-flash-preview",
+            "gemini-flash-latest",
             "claude-haiku-4-5",
             "gpt-5.1-mini",
             "accounts/fireworks/models/gpt-oss-120b",

@@ -59,7 +59,7 @@ Model names accept **stable aliases** (recommended) that are mapped to provider-
 ### Model Configuration
 
 Models are configured via the `Configuration` class which supports:
-- Model selection (default: `gemini-3-flash-preview`)
+- Model selection (default: `gemini-flash-latest`)
 - Max tokens (default: 4000)
 - Temperature (default: 0.0)
 - Timeout (default: 30 seconds)
@@ -126,7 +126,7 @@ The agent has access to these tools (re-exported from `deep_research_agent.tools
 ## Configuration
 
 Default settings in `configuration.py`:
-- Model: `gemini-3-flash-preview`
+- Model: `gemini-flash-latest`
 - Max iterations: 25 (safety limit)
 - Max tokens: 4000
 - Temperature: 0 (deterministic)

@@ -37,8 +37,9 @@ def _retry_cfg() -> RetryConfig:
 def get_article_summary_llm(*, model: str | None = None, temperature: float = 0.1) -> Any:
     """LLM for `summarize_articles.summarize_article` (structured summary + tags)."""
     defaults = [
-        "gemini-3-pro-preview",
-        "gemini-3-flash-preview",
+        "gemini-flash-latest",
+        "claude-haiku-4-5",
+        "gpt-5.1-mini",
         "claude-sonnet-4-5",
         "gpt-5.2",
         "accounts/fireworks/models/deepseek-v3p2",

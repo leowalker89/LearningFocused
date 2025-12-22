@@ -16,6 +16,7 @@ DEFAULT_MODEL_REGISTRY: Dict[str, Dict[str, str]] = {
     # Google (primary)
     "gemini-3-pro-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
     "gemini-3-flash-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
+    "gemini-flash-latest": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
 
     # Anthropic (secondary)
     # Prefer stable aliases (always latest)
@@ -35,7 +36,7 @@ DEFAULT_MODEL_REGISTRY: Dict[str, Dict[str, str]] = {
 }
 
 # Configurable default model - set via env var or use default
-DEFAULT_MODEL = os.environ.get("REACT_AGENT_DEFAULT_MODEL", "gemini-3-flash-preview")
+DEFAULT_MODEL = os.environ.get("REACT_AGENT_DEFAULT_MODEL", "gemini-flash-latest")
 DEFAULT_MAX_ITERATIONS = int(os.environ.get("REACT_AGENT_MAX_ITERATIONS", "25"))
 
 

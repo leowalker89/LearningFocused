@@ -8,6 +8,7 @@ DEFAULT_MODEL_REGISTRY: Dict[str, Dict[str, str]] = {
     # Google Gemini
     "gemini-3-pro-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
     "gemini-3-flash-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
+    "gemini-flash-latest": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
     # Anthropic
     # Prefer stable aliases (always latest)
     "claude-sonnet-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
@@ -24,9 +25,17 @@ DEFAULT_MODEL_REGISTRY: Dict[str, Dict[str, str]] = {
 }
 
 # Configurable default model family - set here to override all defaults at once
-DEFAULT_MODEL_FAMILY = os.environ.get("DRA_DEFAULT_MODEL_FAMILY", "gemini-3-pro-preview")
+DEFAULT_MODEL_FAMILY = os.environ.get("DRA_DEFAULT_MODEL_FAMILY", "gemini-flash-latest")
 
 MODEL_FAMILY_TO_DEFAULTS = {
+    "gemini-flash-latest": {
+        "planner_model": "gemini-flash-latest",
+        "writer_model": "gemini-flash-latest",
+        "researcher_model": "gemini-flash-latest",
+        "research_model": "gemini-flash-latest",
+        "compression_model": "gemini-flash-latest",
+        "final_report_model": "gemini-flash-latest"
+    },
     "gemini-3-pro-preview": {
         "planner_model": "gemini-3-pro-preview",
         "writer_model": "gemini-3-pro-preview",
