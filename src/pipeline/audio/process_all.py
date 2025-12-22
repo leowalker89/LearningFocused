@@ -33,6 +33,16 @@ class Stats:
     failed: int
 
 
+@dataclass(frozen=True)
+class ProcessAllResult:
+    """Summary of a `process_all` run (used by higher-level runners)."""
+
+    mode: str
+    transcripts_matched: int
+    new_transcripts_created: int
+    transcribe_failed: int
+
+
 def _read_json(path: Path) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -96,11 +106,12 @@ def _download(download_limit: int) -> None:
     )
 
 
-def _transcribe_missing(transcribe_limit: int | None) -> list[Path]:
+def _transcribe_missing(transcribe_limit: int | None) -> tuple[list[Path], int]:
     print("\n=== TRANSCRIBE (missing only) ===")
     mp3s = sorted(DOWNLOADS_DIR.glob("*.mp3"))
     mp3s = list(_take(mp3s, transcribe_limit))
     created: list[Path] = []
+    failed = 0
 
     for mp3 in mp3s:
         out = TRANSCRIPTS_DIR / f"{mp3.stem}.json"
@@ -111,10 +122,13 @@ def _transcribe_missing(transcribe_limit: int | None) -> list[Path]:
             created_path = transcribe_audio(str(mp3), output_dir=str(TRANSCRIPTS_DIR))
             created.append(Path(created_path))
         except Exception as e:
+            failed += 1
             print(f"Transcribe failed for {mp3.name}: {e}")
 
     print(f"Created transcripts: {len(created)}")
-    return created
+    if failed:
+        print(f"Transcribe failures: {failed}")
+    return created, failed
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -135,7 +149,7 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> ProcessAllResult:
     """Entry point for `python -m src.pipeline.audio.process_all`."""
     load_dotenv()
     ensure_data_dirs()
@@ -146,6 +160,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(f"Transcripts matched: {len(all_transcripts)} ({args.transcripts_glob!r})")
 
     new_transcripts: list[Path] = []
+    transcribe_failed = 0
     if args.mode == "daily":
         if not args.skip_download:
             try:
@@ -153,7 +168,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             except Exception as e:
                 print(f"Download failed: {e}")
         if not args.skip_transcribe:
-            new_transcripts = _transcribe_missing(transcribe_limit=args.transcribe_limit)
+            new_transcripts, transcribe_failed = _transcribe_missing(transcribe_limit=args.transcribe_limit)
 
     candidates = all_transcripts if args.mode == "backfill" else new_transcripts
 
@@ -182,6 +197,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
 
     print("\nDone.")
+    return ProcessAllResult(
+        mode=args.mode,
+        transcripts_matched=len(all_transcripts),
+        new_transcripts_created=len(new_transcripts),
+        transcribe_failed=transcribe_failed,
+    )
 
 
 if __name__ == "__main__":

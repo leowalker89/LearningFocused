@@ -45,9 +45,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip combined summary generation.",
     )
     p.add_argument(
+        "--run-summaries-without-new-transcripts",
+        action="store_true",
+        help=(
+            "In daily mode, run summary grouping even if this run produced 0 new transcripts. "
+            "By default we skip summaries in that case to avoid spending LLM calls on an unchanged corpus."
+        ),
+    )
+    p.add_argument(
         "--skip-chroma",
         action="store_true",
         help="Skip updating the Chroma vector DB.",
+    )
+    p.add_argument(
+        "--run-chroma-without-new-transcripts",
+        action="store_true",
+        help=(
+            "In daily mode, run Chroma indexing even if this run produced 0 new transcripts. "
+            "By default we skip Chroma indexing in that case to avoid a full corpus scan."
+        ),
     )
     p.add_argument(
         "--delete-audio-from-chroma",
@@ -58,6 +74,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-neo4j",
         action="store_true",
         help="Skip updating the Neo4j knowledge graph.",
+    )
+    p.add_argument(
+        "--run-neo4j-without-new-transcripts",
+        action="store_true",
+        help=(
+            "In daily mode, run Neo4j indexing even if this run produced 0 new transcripts. "
+            "By default we skip Neo4j indexing in that case to avoid a full corpus scan."
+        ),
     )
     p.add_argument(
         "--delete-audio-from-neo4j",
@@ -71,6 +95,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Neo4j relationship schema profile. "
             "If omitted, uses NEO4J_SCHEMA_PROFILE env var or defaults to 'core'."
+        ),
+    )
+    p.add_argument(
+        "--neo4j-audio-limit",
+        type=int,
+        default=None,
+        help=(
+            "Limit the number of audio Documents (segment-level) sent through graph extraction in this run. "
+            "Useful for incremental testing and avoiding large LLM workloads."
         ),
     )
     # Destructive option (hidden; requires env+confirm token inside update_chroma_db anyway)
@@ -99,32 +132,76 @@ def main(argv: Sequence[str] | None = None) -> None:
     if forwarded[:1] == ["--"]:
         forwarded = forwarded[1:]
 
+    process_result = None
     if not args.skip_processing:
-        process_all.main(forwarded)
+        process_result = process_all.main(forwarded)
+
+    no_new_daily = (
+        process_result is not None
+        and process_result.mode == "daily"
+        and process_result.new_transcripts_created == 0
+    )
 
     if not args.skip_summaries:
-        process_combined_summaries(TRANSCRIPTS_DIR, METADATA_DIR, COMBINED_DIR)
+        if (
+            process_result is not None
+            and process_result.mode == "daily"
+            and process_result.new_transcripts_created == 0
+            and not args.run_summaries_without_new_transcripts
+        ):
+            msg = (
+                "No new transcripts were created in this daily run; skipping combined summaries. "
+                "Re-run with --run-summaries-without-new-transcripts to force summary grouping."
+            )
+            if process_result.transcribe_failed:
+                msg += f" (Transcribe failures: {process_result.transcribe_failed})"
+            print(msg)
+        else:
+            process_combined_summaries(TRANSCRIPTS_DIR, METADATA_DIR, COMBINED_DIR)
 
     if not args.skip_chroma:
-        from src.pipeline.index_chroma import update_chroma_db, delete_audio_from_chroma
+        if no_new_daily and not args.run_chroma_without_new_transcripts:
+            msg = (
+                "No new transcripts were created in this daily run; skipping Chroma indexing. "
+                "Re-run with --run-chroma-without-new-transcripts to force a full scan."
+            )
+            if process_result and process_result.transcribe_failed:
+                msg += f" (Transcribe failures: {process_result.transcribe_failed})"
+            print(msg)
+        else:
+            from src.pipeline.index_chroma import update_chroma_db, delete_audio_from_chroma
 
-        if args.delete_audio_from_chroma:
-            print("\n=== CLEANUP CHROMA (AUDIO) ===")
-            delete_audio_from_chroma()
+            if args.delete_audio_from_chroma:
+                print("\n=== CLEANUP CHROMA (AUDIO) ===")
+                delete_audio_from_chroma()
 
-        # Audio runs should default to indexing only audio docs to keep runs scoped and cheap.
-        update_chroma_db(
-            reset=args.reset_chroma,
-            include_audio=True,
-            include_articles=False,
-            confirm_reset=args.confirm_reset_chroma,
-        )
+            # Audio runs should default to indexing only audio docs to keep runs scoped and cheap.
+            update_chroma_db(
+                reset=args.reset_chroma,
+                include_audio=True,
+                include_articles=False,
+                confirm_reset=args.confirm_reset_chroma,
+            )
 
     if not args.skip_neo4j:
-        if args.delete_audio_from_neo4j:
-            delete_audio_from_neo4j()
-        # Audio runs: keep graph indexing scoped to audio by default.
-        update_knowledge_graph(include_audio=True, include_articles=False, schema_profile=args.neo4j_schema_profile)
+        if no_new_daily and not args.run_neo4j_without_new_transcripts:
+            msg = (
+                "No new transcripts were created in this daily run; skipping Neo4j indexing. "
+                "Re-run with --run-neo4j-without-new-transcripts to force a full scan."
+            )
+            if process_result and process_result.transcribe_failed:
+                msg += f" (Transcribe failures: {process_result.transcribe_failed})"
+            print(msg)
+        else:
+            if args.delete_audio_from_neo4j:
+                delete_audio_from_neo4j()
+            # Audio runs: keep graph indexing scoped to audio by default.
+            update_knowledge_graph(
+                include_audio=True,
+                include_articles=False,
+                audio_limit=args.neo4j_audio_limit,
+                schema_profile=args.neo4j_schema_profile,
+            )
 
 
 if __name__ == "__main__":
