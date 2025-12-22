@@ -37,6 +37,9 @@ DEFAULT_MODEL_REGISTRY: dict[str, dict[str, str]] = {
     # Google Gemini
     "gemini-3-pro-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
     "gemini-3-flash-preview": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
+    # Use Google-managed aliases when you want Google to control the "latest" pointer.
+    # These should be treated as first-class model IDs (do NOT alias them to previews).
+    "gemini-flash-latest": {"provider": "google_genai", "env_var": "GOOGLE_API_KEY"},
     # Anthropic
     # Prefer stable API aliases (always latest) + keep versioned IDs for compatibility.
     "claude-sonnet-4-5": {"provider": "anthropic", "env_var": "ANTHROPIC_API_KEY"},
@@ -59,7 +62,6 @@ MODEL_ALIASES: dict[str, str] = {
     "gpt-5": "gpt-5.2",
     "gpt-5-mini": "gpt-5.1-mini",
     # Google legacy
-    "gemini-flash-latest": "gemini-3-flash-preview",
     "gemini-2.5-pro": "gemini-3-pro-preview",
     # Anthropic legacy -> prefer stable aliases
     "claude-sonnet-4-20250514": "claude-sonnet-4-5",
@@ -344,29 +346,16 @@ def build_chat_runnable(
     )
     runnable = with_fallbacks(models[0], models[1:])
 
-    # Wrap invoke/ainvoke with retries by monkey-patching lightweight callables.
-    # This stays compatible with `prompt | llm | parser` chains which call `.invoke()`.
+    # IMPORTANT: keep this as a LangChain Runnable so `prompt | llm | parser` works.
+    # Use LangChain's built-in retry wrapper rather than returning a custom object
+    # (custom wrappers may not be recognized by LCEL's `|` operator).
     if retry is None:
         return runnable
 
-    class _RetryWrapper:
-        def __init__(self, inner: Any):
-            self._inner = inner
-
-        def invoke(self, inp: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-            if kwargs:
-                return retryable_invoke(self._inner.bind(**kwargs), inp, retry=retry)
-            return retryable_invoke(self._inner, inp, retry=retry)
-
-        async def ainvoke(self, inp: Any, **kwargs: Any) -> Any:  # noqa: ANN401
-            if kwargs:
-                return await _retryable_ainvoke(self._inner.bind(**kwargs), inp, retry=retry)
-            return await _retryable_ainvoke(self._inner, inp, retry=retry)
-
-        def __getattr__(self, name: str) -> Any:  # noqa: ANN401
-            return getattr(self._inner, name)
-
-    return _RetryWrapper(runnable)
+    # `with_retry` uses Tenacity under the hood and returns a Runnable.
+    # We map our RetryConfig to "stop after N attempts". Backoff/jitter are left
+    # to LangChain defaults for now to preserve Runnable compatibility.
+    return runnable.with_retry(stop_after_attempt=retry.max_attempts)
 
 
 def retryable_invoke_models(
