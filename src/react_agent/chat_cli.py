@@ -6,6 +6,7 @@ Purpose:
 Features:
     - Colored output (ANSI codes)
     - Streams tool calls and final responses
+    - Conversation memory via LangGraph checkpointer (persists within session)
     - Type 'exit' or Ctrl+C to quit
     
 Usage:
@@ -15,7 +16,8 @@ Usage:
 import sys
 import asyncio
 import os
-from typing import List, Any, Sequence, Union
+import uuid
+from typing import Any, Sequence, Union
 
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, ToolMessage
@@ -84,22 +86,29 @@ def _get_stream_mode() -> Union[str, Sequence[str]]:
     return tuple(parts) if parts else ("updates", "values")
 
 
-async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
-    """Run one turn through the agent and return updated messages."""
+async def run_turn(user_input: str, thread_id: str) -> None:
+    """Run one turn through the agent.
+    
+    The checkpointer automatically retrieves and stores conversation history
+    based on the thread_id, so we only need to send the new user message.
+    """
     stream_mode = _get_stream_mode()
     final_response: Any = None
     cfg = Configuration()
-    run_config = RunnableConfig(recursion_limit=cfg.max_iterations)
+    
+    # Include thread_id in configurable for checkpointer to manage history
+    run_config = RunnableConfig(
+        recursion_limit=cfg.max_iterations,
+        configurable={"thread_id": thread_id},
+    )
 
-    # Avoid re-printing the entire conversation on every user turn.
-    # The agent will stream a full `messages` list in early chunks; we only want to
-    # render messages added beyond the user's provided history.
-    last_seen = len(messages)
-    latest_messages: List[BaseMessage] = messages
+    # Track messages we've already displayed in this turn
+    last_seen = 0
+    latest_messages: list[BaseMessage] = []
     
     try:
         async for chunk in react_agent.astream(
-            {"messages": messages},
+            {"messages": [HumanMessage(content=user_input)]},
             config=run_config,
             stream_mode=stream_mode,
         ):
@@ -135,7 +144,7 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
             f"{COLOR_INFO}Error: {e}{COLOR_RESET}\n"
             f"{COLOR_INFO}Tip: The agent hit its iteration limit. Try rephrasing, or increase REACT_AGENT_MAX_ITERATIONS.{COLOR_RESET}"
         )
-        return messages
+        return
     
     # If we never printed a final response but we do have messages, try to print the last AI output.
     if final_response is None and latest_messages:
@@ -147,18 +156,19 @@ async def run_turn(messages: List[BaseMessage]) -> List[BaseMessage]:
                 print(f"{COLOR_SUCCESS}======================{COLOR_RESET}\n")
                 break
 
-    # Persist state messages for the next turn
-    return latest_messages
-
 
 async def main():
     """Main chat loop."""
     load_dotenv()
+    
+    # Generate a unique thread ID for this session
+    # The checkpointer uses this to store/retrieve conversation history
+    thread_id = str(uuid.uuid4())
+    
     print(f"{COLOR_BOLD}React Agent Chat{COLOR_RESET} (type 'exit' to quit)")
+    print(f"{COLOR_DIM}Session: {thread_id[:8]}...{COLOR_RESET}")
     print(f"{COLOR_DIM}{'-'*50}{COLOR_RESET}")
     print()
-    
-    messages: List[BaseMessage] = []
     
     try:
         while True:
@@ -169,11 +179,8 @@ async def main():
                 print("Goodbye!")
                 break
             
-            # Add user message
-            messages.append(HumanMessage(content=user_input))
-            
-            # Run agent turn
-            messages = await run_turn(messages)
+            # Run agent turn - checkpointer handles message history automatically
+            await run_turn(user_input, thread_id)
             
             print(f"{COLOR_DIM}{'-'*80}{COLOR_RESET}")
             print()

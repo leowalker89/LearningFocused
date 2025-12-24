@@ -4,7 +4,12 @@ A lightweight LangChain ReAct agent for querying the Future of Education podcast
 
 ## Overview
 
-This agent implements the **ReAct pattern** (Reason → Act/tool call → Observe → repeat) using `langchain.agents.create_agent`. It’s intended for fast, tool-grounded Q&A over the local stores (Chroma + Neo4j).
+This agent implements the **ReAct pattern** (Reason → Act/tool call → Observe → repeat) using `langchain.agents.create_agent`. It's intended for fast, tool-grounded Q&A over the local stores (Chroma + Neo4j).
+
+**Features:**
+- **Conversation memory** via LangGraph's `MemorySaver` checkpointer (persists within session)
+- **Multi-provider support** (OpenAI, Anthropic, Google, Fireworks)
+- **Streaming** tool calls and responses
 
 **When to use this vs deep_research_agent:**
 - **React Agent**: Quick questions, single-topic lookups, testing tools
@@ -82,10 +87,18 @@ uv run python -m src.react_agent.chat_cli
 from src.react_agent.graph import react_agent, get_react_agent
 from langchain_core.messages import HumanMessage
 
-# Use default agent
-result = await react_agent.ainvoke({
-    "messages": [HumanMessage(content="What is Two Hour Learning?")]
-})
+# Use default agent with conversation memory
+# Pass a thread_id to enable memory persistence within the session
+result = await react_agent.ainvoke(
+    {"messages": [HumanMessage(content="What is Two Hour Learning?")]},
+    config={"configurable": {"thread_id": "my-session-123"}}
+)
+
+# Follow-up questions in the same thread remember context
+result = await react_agent.ainvoke(
+    {"messages": [HumanMessage(content="Tell me more about that")]},
+    config={"configurable": {"thread_id": "my-session-123"}}
+)
 
 # Create agent with custom config
 from langchain_core.runnables import RunnableConfig
@@ -94,13 +107,14 @@ config = RunnableConfig(
     configurable={
         "model": "claude-sonnet-4-5",
         "max_tokens": 8000,
-        "temperature": 0.1
+        "temperature": 0.1,
+        "thread_id": "custom-thread"
     }
 )
 custom_agent = get_react_agent(config)
 result = await custom_agent.ainvoke({
     "messages": [HumanMessage(content="What is Two Hour Learning?")]
-})
+}, config=config)
 ```
 
 ## Comparison with deep_research_agent
@@ -112,7 +126,8 @@ result = await custom_agent.ainvoke({
 | Use case | Quick Q&A | In-depth research |
 | Tool access | Direct | Delegated via researchers |
 | Output | Single response | Structured report |
-| State | Minimal (messages) | Rich (brief, notes, iterations) |
+| State | Minimal (messages + checkpointer memory) | Rich (brief, notes, iterations) |
+| Memory | MemorySaver checkpointer (session-scoped) | Graph state |
 | Model creation | Provider-specific classes | `init_chat_model` with configurable fields |
 
 ## Tools Available
